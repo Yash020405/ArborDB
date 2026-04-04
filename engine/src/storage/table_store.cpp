@@ -6,37 +6,52 @@ namespace arbor {
 TableStore::TableStore(const std::string& dataDir)
     : dataDir_(dataDir), schemaManager_(dataDir) {}
 
+std::string TableStore::pagerPath(const std::string& tableName) const {
+    return dataDir_ + "/" + tableName + ".db";
+}
+
+Pager* TableStore::getOrOpenPager(const std::string& tableName) {
+    auto it = pagers_.find(tableName);
+    if (it != pagers_.end()) return it->second.get();
+    pagers_[tableName] = std::make_unique<Pager>(pagerPath(tableName));
+    return pagers_[tableName].get();
+}
+
 BTree* TableStore::getOrLoadTree(const std::string& tableName) {
     auto it = trees_.find(tableName);
-    if (it != trees_.end()) {
-        return it->second.get();
-    }
+    if (it != trees_.end()) return it->second.get();
+
     if (!schemaManager_.tableExists(tableName)) {
         throw std::runtime_error("Table does not exist: " + tableName);
     }
+
     schemaManager_.loadTable(tableName);
     trees_[tableName] = std::make_unique<BTree>();
+
+    Pager* pager = getOrOpenPager(tableName);
+    if (pager->totalPages() > 0) {
+        Serializer::load(*trees_[tableName], *pager);
+    }
+
     return trees_[tableName].get();
 }
 
 SecondaryIndex& TableStore::getOrCreateIndex(const std::string& tableName, const TableSchema& schema) {
     auto it = secondaryIndexes_.find(tableName);
-    if (it != secondaryIndexes_.end()) {
-        return it->second;
-    }
+    if (it != secondaryIndexes_.end()) return it->second;
+
     SecondaryIndex idx;
     for (const auto& col : schema.columns) {
-        if (col.name != schema.primaryKey) {
-            idx.addColumn(col.name);
-        }
+        if (col.name != schema.primaryKey) idx.addColumn(col.name);
     }
     secondaryIndexes_[tableName] = std::move(idx);
     return secondaryIndexes_[tableName];
 }
 
-std::string TableStore::columnValueToString(const nlohmann::json& value) const {
-    if (value.is_string()) return value.get<std::string>();
-    return value.dump();
+void TableStore::persistTree(const std::string& tableName) {
+    Pager* pager = getOrOpenPager(tableName);
+    pagers_[tableName] = std::make_unique<Pager>(pagerPath(tableName));
+    Serializer::save(*trees_[tableName], *pagers_[tableName]);
 }
 
 void TableStore::validateRow(const TableSchema& schema, const nlohmann::json& row) const {
@@ -65,10 +80,16 @@ void TableStore::validateRow(const TableSchema& schema, const nlohmann::json& ro
     }
 }
 
+std::string TableStore::columnValueToString(const nlohmann::json& value) const {
+    if (value.is_string()) return value.get<std::string>();
+    return value.dump();
+}
+
 Metrics TableStore::createTable(const TableSchema& schema) {
     Timer t;
     schemaManager_.createTable(schema);
-    trees_[schema.tableName] = std::make_unique<BTree>();
+    trees_[schema.tableName]  = std::make_unique<BTree>();
+    getOrOpenPager(schema.tableName);
     getOrCreateIndex(schema.tableName, schema);
     return {t.elapsedMs(), 1, 0, 0};
 }
@@ -88,7 +109,10 @@ Metrics TableStore::insert(const std::string& tableName, int64_t key, const nloh
         }
     }
 
-    return {t.elapsedMs(), tree->nodeTraversals(), tree->nodeTraversals(), 1};
+    persistTree(tableName);
+
+    uint64_t traversals = tree->nodeTraversals();
+    return {t.elapsedMs(), traversals, traversals, 1};
 }
 
 std::pair<std::optional<nlohmann::json>, Metrics> TableStore::search(const std::string& tableName, int64_t key) {
@@ -97,8 +121,7 @@ std::pair<std::optional<nlohmann::json>, Metrics> TableStore::search(const std::
     tree->resetMetrics();
     auto result = tree->search(key);
     uint64_t traversals = tree->nodeTraversals();
-    uint64_t rows = result.has_value() ? 1 : 0;
-    return {result, {t.elapsedMs(), traversals, traversals, rows}};
+    return {result, {t.elapsedMs(), traversals, traversals, result.has_value() ? 1u : 0u}};
 }
 
 std::pair<std::vector<nlohmann::json>, Metrics> TableStore::rangeQuery(const std::string& tableName, int64_t start, int64_t end) {
@@ -126,8 +149,7 @@ std::pair<std::vector<nlohmann::json>, Metrics> TableStore::searchByColumn(
     BTree* tree = getOrLoadTree(tableName);
     TableSchema schema = schemaManager_.loadTable(tableName);
 
-    auto it = secondaryIndexes_.find(tableName);
-    if (it == secondaryIndexes_.end() || !it->second.hasColumn(column)) {
+    if (!secondaryIndexes_.count(tableName)) {
         getOrCreateIndex(tableName, schema);
     }
 
@@ -138,9 +160,7 @@ std::pair<std::vector<nlohmann::json>, Metrics> TableStore::searchByColumn(
     std::vector<nlohmann::json> rows;
     for (int64_t pk : primaryKeys) {
         auto row = tree->search(pk);
-        if (row.has_value()) {
-            rows.push_back(row.value());
-        }
+        if (row.has_value()) rows.push_back(row.value());
     }
     uint64_t traversals = tree->nodeTraversals();
     return {rows, {t.elapsedMs(), traversals, traversals, static_cast<uint64_t>(rows.size())}};

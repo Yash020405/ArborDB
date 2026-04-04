@@ -5,6 +5,8 @@
 #include <memory>
 #include "btree.h"
 #include "secondary_index.h"
+#include "serializer.h"
+#include "../disk/pager.h"
 #include "../schema/schema.h"
 #include "../metrics.h"
 #include "../../vendor/json.hpp"
@@ -27,13 +29,17 @@ public:
 private:
     std::string dataDir_;
     SchemaManager schemaManager_;
-    std::unordered_map<std::string, std::unique_ptr<BTree>> trees_;
-    std::unordered_map<std::string, SecondaryIndex> secondaryIndexes_;
+    std::unordered_map<std::string, std::unique_ptr<BTree>>   trees_;
+    std::unordered_map<std::string, std::unique_ptr<Pager>>   pagers_;
+    std::unordered_map<std::string, SecondaryIndex>            secondaryIndexes_;
 
-    BTree* getOrLoadTree(const std::string& tableName);
+    BTree*  getOrLoadTree(const std::string& tableName);
+    Pager*  getOrOpenPager(const std::string& tableName);
     SecondaryIndex& getOrCreateIndex(const std::string& tableName, const TableSchema& schema);
-    void validateRow(const TableSchema& schema, const nlohmann::json& row) const;
+    void    persistTree(const std::string& tableName);
+    void    validateRow(const TableSchema& schema, const nlohmann::json& row) const;
     std::string columnValueToString(const nlohmann::json& value) const;
+    std::string pagerPath(const std::string& tableName) const;
 };
 
 } // namespace arbor

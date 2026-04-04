@@ -21,6 +21,8 @@ struct BTreeNode {
     ~BTreeNode();
 };
 
+class Serializer;
+
 class BTree {
 public:
     BTree();
@@ -35,6 +37,8 @@ public:
     void resetMetrics();
 
 private:
+    friend class Serializer;
+
     BTreeNode* root_;
     mutable uint64_t nodeTraversals_;
 

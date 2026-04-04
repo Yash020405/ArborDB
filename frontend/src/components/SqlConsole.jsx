@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import axios from 'axios';
-import { Play, Activity } from 'lucide-react';
+import { Play, Activity, FastForward } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -11,16 +11,67 @@ export default function SqlConsole() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const textareaRef = useRef(null);
 
-  const handleRun = async () => {
-    if (!sql.trim()) return;
+  const executeQuery = async (queryText) => {
+    if (!queryText.trim()) return;
     setLoading(true);
     setError(null);
     setResult(null);
 
     try {
-      const res = await axios.post('/query', { sql });
+      const res = await axios.post('/query', { sql: queryText });
       setResult(res.data);
+    } catch (err) {
+      if (err.response && err.response.data && err.response.data.error) {
+        setError(err.response.data.error.message);
+      } else {
+        setError(err.message);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRunSelectionOrCurrent = () => {
+    const el = textareaRef.current;
+    if (!el) return;
+
+    const selectedText = sql.substring(el.selectionStart, el.selectionEnd);
+    let queryToRun = selectedText;
+
+    // If no text is highlighted, find the statement under the cursor
+    if (!queryToRun.trim()) {
+      const cursor = el.selectionStart;
+      const beforeCursor = sql.substring(0, cursor);
+      const afterCursor = sql.substring(cursor);
+      
+      const startIdx = beforeCursor.lastIndexOf(';') + 1;
+      const endIdx = afterCursor.indexOf(';');
+      const actualEnd = endIdx === -1 ? sql.length : cursor + endIdx;
+      
+      queryToRun = sql.substring(startIdx, actualEnd);
+    }
+
+    if (!queryToRun.trim().endsWith(';')) queryToRun += ';';
+    executeQuery(queryToRun);
+  };
+
+  const handleRunAll = async () => {
+    const statements = sql.split(';').map(s => s.trim()).filter(Boolean);
+    if (statements.length === 0) return;
+    
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    let lastRes = null;
+    
+    try {
+      for (const stmt of statements) {
+        const res = await axios.post('/query', { sql: stmt + ';' });
+        lastRes = res.data;
+      }
+      setResult(lastRes);
     } catch (err) {
       if (err.response && err.response.data && err.response.data.error) {
         setError(err.response.data.error.message);
@@ -34,7 +85,7 @@ export default function SqlConsole() {
 
   const handleKeyDown = (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-      handleRun();
+      handleRunSelectionOrCurrent();
     }
   };
 
@@ -72,18 +123,24 @@ export default function SqlConsole() {
       <Card className="flex flex-col min-h-[300px]">
         <CardHeader className="flex flex-row items-center justify-between p-4 bg-muted/20 border-b space-y-0">
           <CardTitle className="text-sm font-medium text-muted-foreground">Query Editor</CardTitle>
-          <Button size="sm" onClick={handleRun} disabled={loading} className="gap-2">
-            <Play size={14} /> Run Query <span className="opacity-70 text-xs ml-1">(Ctrl+Enter)</span>
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={handleRunSelectionOrCurrent} disabled={loading} className="gap-2 bg-background">
+              <Play size={14} className="text-primary" /> Run Current <span className="opacity-70 text-xs ml-1">(Ctrl+Enter)</span>
+            </Button>
+            <Button size="sm" onClick={handleRunAll} disabled={loading} className="gap-2">
+              <FastForward size={14} /> Run All
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="flex-1 p-0">
           <Textarea 
+            ref={textareaRef}
             className="w-full h-full border-none shadow-none rounded-none focus-visible:ring-0 p-6 font-mono text-sm resize-none bg-transparent"
             value={sql}
             onChange={(e) => setSql(e.target.value)}
             onKeyDown={handleKeyDown}
             spellCheck={false}
-            placeholder="Enter SQL Query Here..."
+            placeholder="Enter SQL Query Here... (Separate with ;)"
           />
         </CardContent>
       </Card>

@@ -2,6 +2,7 @@
 
 #include <string>
 #include "storage/table_store.h"
+#include "metrics.h"
 #include "../vendor/json.hpp"
 
 namespace arbor {
@@ -21,7 +22,7 @@ private:
     nlohmann::json handleRange(const nlohmann::json& cmd);
     nlohmann::json handleFullScan(const nlohmann::json& cmd);
 
-    nlohmann::json okResponse(std::vector<nlohmann::json> rows, uint64_t timeMs, uint64_t diskReads) const;
+    nlohmann::json okResponse(std::vector<nlohmann::json> rows, const Metrics& m) const;
     nlohmann::json errorResponse(const std::string& message) const;
 };
 

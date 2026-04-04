@@ -47,6 +47,14 @@ rl.on('line', async (line) => {
     return;
   }
 
+  // Clear current input buffer like MySQL
+  if (trimmed === '\\c') {
+    statementBuffer = '';
+    rl.setPrompt('arbordb> ');
+    rl.prompt();
+    return;
+  }
+
   // Handle Meta commands (starting with .) if not part of a multi-line query
   if (statementBuffer === '' && trimmed.startsWith('.')) {
     handleMetaCommand(trimmed);
@@ -54,13 +62,26 @@ rl.on('line', async (line) => {
     return;
   }
 
-  statementBuffer += ' ' + trimmed;
+  statementBuffer += (statementBuffer ? ' ' : '') + trimmed;
 
   // If the query ends with semicolon, process it
   if (statementBuffer.trim().endsWith(';')) {
-    const sql = statementBuffer.trim();
+    const rawSql = statementBuffer.trim();
     statementBuffer = ''; 
-    await executeSQL(sql);
+    rl.setPrompt('arbordb> ');
+
+    const cleanSql = rawSql.replace(/;+$/, '').trim();
+    if (cleanSql.toLowerCase() === 'show tables') {
+      handleMetaCommand('.tables');
+    } else if (cleanSql.toLowerCase().startsWith('describe ')) {
+      const tName = cleanSql.split(' ')[1];
+      handleMetaCommand(`.schema ${tName}`);
+    } else if (cleanSql.toLowerCase().startsWith('desc ')) {
+      const tName = cleanSql.split(' ')[1];
+      handleMetaCommand(`.schema ${tName}`);
+    } else {
+      await executeSQL(rawSql);
+    }
   } else {
     // Multi-line continuation
     rl.setPrompt('      -> ');
@@ -73,7 +94,10 @@ rl.on('line', async (line) => {
 });
 
 function handleMetaCommand(cmd) {
-  switch (cmd) {
+  // Strip trailing spaces and semicolons to allow ".tables ;" to work securely
+  const cleanCmd = cmd.replace(/[\s;]+$/, '');
+  
+  switch (cleanCmd) {
     case '.exit':
     case '.quit':
       saveHistory();
@@ -92,12 +116,13 @@ function handleMetaCommand(cmd) {
       console.log('  .exit, .quit    Exit the monitor');
       console.log('  .tables         List all tables');
       console.log('  .schema <table> Describe table schema');
+      console.log('  \\c              Clear the current input statement');
       console.log('  .clear          Clear screen');
       console.log('  .help           Print this menu');
       break;
     default:
-      if (cmd.startsWith('.schema ')) {
-        const tName = cmd.split(' ')[1];
+      if (cleanCmd.startsWith('.schema ')) {
+        const tName = cleanCmd.split(' ')[1];
         const info = engine.getTableInfo(tName);
         if (!info) {
           console.log(chalk.red(`ERROR: Table '${tName}' does not exist.`));
@@ -106,7 +131,7 @@ function handleMetaCommand(cmd) {
           printTable(schemaRows);
         }
       } else {
-        console.log(`Unknown command: ${cmd}. Type .help for help.`);
+        console.log(`Unknown command: ${cleanCmd}. Type .help for help.`);
       }
   }
 }

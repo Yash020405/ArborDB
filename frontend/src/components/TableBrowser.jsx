@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Database, RefreshCw, Plus, Upload } from 'lucide-react';
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 export default function TableBrowser() {
   const [tables, setTables] = useState([]);
@@ -23,54 +26,62 @@ export default function TableBrowser() {
   }, []);
 
   return (
-    <div style={{ padding: '32px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-        <h2 style={{ fontSize: '1.5rem', fontWeight: 600 }}>Table Schema Manager</h2>
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <button className="btn btn-secondary" onClick={fetchTables}>
-            <RefreshCw size={16} /> Refresh
-          </button>
-          <button className="btn btn-primary">
-            <Plus size={16} /> New Table
-          </button>
-          <button className="btn btn-primary" style={{ backgroundColor: 'var(--bg-surface-elevated)', color: 'var(--accent-base)', border: '1px solid var(--accent-base)' }}>
-            <Upload size={16} /> Upload CSV
-          </button>
+    <div className="p-8">
+      <div className="flex justify-between items-center mb-8">
+        <h2 className="text-2xl font-bold tracking-tight">Table Schema Manager</h2>
+        <div className="flex gap-3">
+          <Button variant="outline" onClick={fetchTables} className="gap-2">
+            <RefreshCw size={14} /> Refresh
+          </Button>
+          <Button className="gap-2">
+            <Plus size={14} /> New Table
+          </Button>
+          <Button variant="outline" className="border-primary text-primary hover:bg-primary/10 gap-2">
+            <Upload size={14} /> Upload CSV
+          </Button>
         </div>
       </div>
 
       {loading ? (
-        <div style={{ color: 'var(--text-muted)' }}>Loading tables...</div>
-      ) : tables.length === 0 ? (
-        <div style={{ padding: '48px', textAlign: 'center', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)' }}>
-          <Database size={48} color="var(--border-subtle)" style={{ marginBottom: '16px' }} />
-          <h3 style={{ marginBottom: '8px' }}>No Tables Found</h3>
-          <p className="text-muted">Create a table using SQL or use the New Table button.</p>
+        <div className="text-muted-foreground flex items-center gap-2">
+           <div className="w-2 h-2 rounded-full bg-primary animate-ping"></div> Loading tables...
         </div>
+      ) : tables.length === 0 ? (
+        <Card className="p-16 flex flex-col items-center justify-center text-center bg-muted/20 border-dashed">
+          <Database size={48} className="text-muted-foreground/50 mb-4" />
+          <h3 className="text-lg font-semibold mb-2">No Tables Found</h3>
+          <p className="text-sm text-muted-foreground mb-6">Create a table using SQL or use the New Table button.</p>
+          <Button>Create your first table</Button>
+        </Card>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '24px' }}>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {tables.map(table => (
-            <div key={table.name} className="metric-card" style={{ padding: '20px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-                <div style={{ backgroundColor: 'var(--accent-glow)', padding: '8px', borderRadius: '8px' }}>
-                  <Database size={20} color="var(--accent-base)" />
+            <Card key={table.name} className="transition-all hover:border-primary/50 hover:shadow-md">
+              <CardHeader className="flex flex-row items-start gap-4 pb-4">
+                <div className="p-2.5 rounded-lg bg-primary/10 text-primary">
+                  <Database size={22} />
                 </div>
                 <div>
-                  <div style={{ fontWeight: 600, fontSize: '1.1rem' }}>{table.name}</div>
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{table.rowCount} rows</div>
+                  <CardTitle className="text-lg">{table.name}</CardTitle>
+                  <div className="text-sm text-muted-foreground mt-1 font-medium">{table.rowCount} rows</div>
                 </div>
-              </div>
-              
-              <div style={{ backgroundColor: 'var(--bg-base)', padding: '12px', borderRadius: 'var(--radius-md)' }}>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Schema</div>
-                {Object.entries(table.schema).map(([col, type]) => (
-                  <div key={col} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', marginBottom: '4px' }}>
-                    <span style={{ fontFamily: 'var(--font-mono)' }}>{col}</span>
-                    <span style={{ color: 'var(--accent-base)', fontSize: '0.8rem' }}>{type}</span>
+              </CardHeader>
+              <CardContent>
+                <div className="bg-muted/30 p-4 rounded-md border text-sm">
+                  <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Schema</div>
+                  <div className="space-y-2.5">
+                    {Object.entries(table.schema).map(([col, type]) => (
+                      <div key={col} className="flex justify-between items-center bg-background/50 p-2 rounded border border-transparent hover:border-border">
+                        <span className="font-mono text-sm">{col}</span>
+                        <Badge variant="outline" className="text-primary border-primary/20 bg-primary/5 font-mono text-[10px] uppercase font-semibold">
+                          {type}
+                        </Badge>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
+                </div>
+              </CardContent>
+            </Card>
           ))}
         </div>
       )}

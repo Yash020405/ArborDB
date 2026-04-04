@@ -4,6 +4,7 @@ import SqlConsole from './components/SqlConsole';
 import TableBrowser from './components/TableBrowser';
 import MetricsDashboard from './components/MetricsDashboard';
 import axios from 'axios';
+import { Button } from "@/components/ui/button";
 
 // Setup globally
 axios.defaults.baseURL = 'http://localhost:3000';
@@ -25,29 +26,32 @@ function App() {
       {/* Sidebar */}
       <aside className="sidebar">
         <div className="sidebar-header">
-          <Database size={24} color="var(--accent-base)" />
+          <Database size={24} className="text-primary" />
           ArborDB
         </div>
         
-        <nav className="nav-menu">
-          <button 
-            className={`nav-item ${activeView === 'sql-console' ? 'active' : ''}`}
+        <nav className="flex-1 p-4 flex flex-col gap-2">
+          <Button 
+            variant={activeView === 'sql-console' ? 'secondary' : 'ghost'} 
+            className="w-full justify-start gap-3 text-muted-foreground hover:text-foreground"
             onClick={() => setActiveView('sql-console')}
           >
-            <TerminalSquare /> SQL Console
-          </button>
-          <button 
-            className={`nav-item ${activeView === 'table-browser' ? 'active' : ''}`}
+            <TerminalSquare size={18} /> SQL Console
+          </Button>
+          <Button 
+            variant={activeView === 'table-browser' ? 'secondary' : 'ghost'} 
+            className="w-full justify-start gap-3 text-muted-foreground hover:text-foreground"
             onClick={() => setActiveView('table-browser')}
           >
-            <Settings2 /> Table Builder
-          </button>
-          <button 
-            className={`nav-item ${activeView === 'metrics' ? 'active' : ''}`}
+            <Settings2 size={18} /> Table Manager
+          </Button>
+          <Button 
+            variant={activeView === 'metrics' ? 'secondary' : 'ghost'} 
+            className="w-full justify-start gap-3 text-muted-foreground hover:text-foreground"
             onClick={() => setActiveView('metrics')}
           >
-            <Activity /> Metrics
-          </button>
+            <Activity size={18} /> Metrics
+          </Button>
         </nav>
       </aside>
 
@@ -55,13 +59,13 @@ function App() {
       <main className="main-content">
         {/* Topbar */}
         <header className="topbar">
-          <h2>{
+          <h2 className="text-lg font-semibold">{
             activeView === 'sql-console' ? 'SQL Query Console' : 
             activeView === 'table-browser' ? 'Visual Table Manager' : 
             'Database Metrics'
           }</h2>
-          <div className="text-muted" style={{fontSize: '0.9rem'}}>
-            Connected: <span style={{color: 'var(--accent-base)'}}>localhost:3000</span>
+          <div className="text-sm text-muted-foreground">
+            Connected: <span className="text-primary">localhost:3000</span>
           </div>
         </header>
 

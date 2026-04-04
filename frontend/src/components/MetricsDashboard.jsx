@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Activity, Clock, Database, AlertCircle } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 
 export default function MetricsDashboard() {
   const [metrics, setMetrics] = useState(null);
@@ -23,69 +26,109 @@ export default function MetricsDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  if (loading) return <div style={{ padding: '32px', color: 'var(--text-muted)' }}>Loading metrics...</div>;
-  if (!metrics) return <div style={{ padding: '32px', color: 'var(--danger-base)' }}>Failed to load metrics.</div>;
+  if (loading) return <div className="p-8 text-muted-foreground flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-primary animate-ping"></div> Loading metrics...</div>;
+  if (!metrics) return <div className="p-8 text-destructive font-medium">Failed to load metrics.</div>;
 
   const { counters, performance, recentQueries } = metrics.metrics;
 
   return (
-    <div style={{ padding: '32px' }}>
+    <div className="p-8">
       
-      <div className="metrics-grid" style={{ padding: 0, marginBottom: '32px' }}>
-        <div className="metric-card">
-          <div className="metric-title"><Database size={16} style={{display: 'inline', marginRight: '8px'}} /> Total Queries</div>
-          <div className="metric-value">{counters.totalQueries}</div>
-        </div>
-        <div className="metric-card">
-          <div className="metric-title"><Activity size={16} style={{display: 'inline', marginRight: '8px'}} /> Avg Latency</div>
-          <div className="metric-value highlight">{performance.avgExecutionTimeMs} <span style={{fontSize:'1rem', color:'var(--text-muted)'}}>ms</span></div>
-        </div>
-        <div className="metric-card">
-          <div className="metric-title"><Clock size={16} style={{display: 'inline', marginRight: '8px'}} /> P95 Latency</div>
-          <div className="metric-value">{performance.p95ExecutionTimeMs} <span style={{fontSize:'1rem', color:'var(--text-muted)'}}>ms</span></div>
-        </div>
-        <div className="metric-card">
-          <div className="metric-title"><AlertCircle size={16} style={{display: 'inline', marginRight: '8px'}} /> Errors</div>
-          <div className="metric-value" style={{ color: counters.totalErrors > 0 ? 'var(--danger-base)' : 'inherit' }}>
-            {counters.totalErrors}
-          </div>
-        </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Queries</CardTitle>
+            <Database size={16} className="text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold">{counters.totalQueries}</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Avg Latency</CardTitle>
+            <Activity size={16} className="text-primary" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-primary">{performance.avgExecutionTimeMs} <span className="text-base font-medium text-muted-foreground">ms</span></div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">P95 Latency</CardTitle>
+            <Clock size={16} className="text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold">{performance.p95ExecutionTimeMs} <span className="text-base font-medium text-muted-foreground">ms</span></div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Errors</CardTitle>
+            <AlertCircle size={16} className={counters.totalErrors > 0 ? "text-destructive" : "text-muted-foreground"} />
+          </CardHeader>
+          <CardContent>
+            <div className={`text-3xl font-bold ${counters.totalErrors > 0 ? 'text-destructive' : ''}`}>
+              {counters.totalErrors}
+            </div>
+            {counters.totalErrors === 0 && (
+              <p className="text-xs text-muted-foreground mt-1">System is healthy</p>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
-      <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-        <div style={{ padding: '20px', borderBottom: '1px solid var(--border-subtle)', fontWeight: 600 }}>
-          Recent Query Log
-        </div>
-        <div className="table-container" style={{ border: 'none', borderRadius: 0 }}>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>Type</th>
-                <th>SQL</th>
-                <th>Latency</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent Query Log</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader className="bg-muted/30">
+              <TableRow>
+                <TableHead className="w-[150px]">Time</TableHead>
+                <TableHead className="w-[120px]">Type</TableHead>
+                <TableHead>SQL</TableHead>
+                <TableHead className="w-[100px] text-right">Latency</TableHead>
+                <TableHead className="w-[100px] text-center">Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {recentQueries && recentQueries.map((q, i) => (
-                <tr key={i}>
-                  <td style={{ color: 'var(--text-muted)' }}>{new Date(q.timestamp).toLocaleTimeString()}</td>
-                  <td><span style={{ backgroundColor: 'var(--bg-surface-elevated)', padding: '4px 8px', borderRadius: '4px', fontSize: '0.8rem' }}>{q.type}</span></td>
-                  <td>{q.sql && q.sql.length > 50 ? q.sql.substring(0, 50) + '...' : q.sql}</td>
-                  <td style={{ color: 'var(--accent-base)' }}>{q.executionTimeMs}ms</td>
-                  <td>{q.status === 'success' ? '✅' : '❌'}</td>
-                </tr>
+                <TableRow key={i}>
+                  <TableCell className="text-muted-foreground text-xs">{new Date(q.timestamp).toLocaleTimeString()}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="font-mono text-[10px] bg-muted/20">
+                      {q.type}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="font-mono text-xs opacity-90 max-w-sm truncate" title={q.sql}>
+                    {q.sql}
+                  </TableCell>
+                  <TableCell className="text-right text-primary font-mono text-xs font-semibold">{q.executionTimeMs}ms</TableCell>
+                  <TableCell className="text-center">
+                    {q.status === 'success' ? (
+                      <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-none px-2 shadow-none">OK</Badge>
+                    ) : (
+                      <Badge variant="outline" className="bg-destructive/10 text-destructive border-none px-2 shadow-none">FAIL</Badge>
+                    )}
+                  </TableCell>
+                </TableRow>
               ))}
               {(!recentQueries || recentQueries.length === 0) && (
-                <tr>
-                  <td colSpan={5} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>No recent queries.</td>
-                </tr>
+                <TableRow>
+                  <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                    No recent queries logged.
+                  </TableCell>
+                </TableRow>
               )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
   );
 }

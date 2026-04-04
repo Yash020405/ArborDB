@@ -1,9 +1,13 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { Play, Activity } from 'lucide-react';
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 
 export default function SqlConsole() {
-  const [sql, setSql] = useState('SELECT * FROM users;');
+  const [sql, setSql] = useState('SELECT * FROM users;\n');
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -35,72 +39,72 @@ export default function SqlConsole() {
   };
 
   const renderTable = (rows) => {
-    if (!rows || rows.length === 0) return <div style={{padding: '24px', color: 'var(--text-muted)'}}>0 rows returned (Empty Set)</div>;
+    if (!rows || rows.length === 0) return <div className="p-6 text-muted-foreground text-sm">0 rows returned (Empty Set)</div>;
     const columns = Object.keys(rows[0]);
     
     return (
-      <table className="data-table">
-        <thead>
-          <tr>
-            {columns.map(col => <th key={col}>{col}</th>)}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, i) => (
-            <tr key={i}>
-              {columns.map(col => (
-                <td key={col} style={{ color: row[col] === null ? 'var(--text-muted)' : 'inherit' }}>
-                  {row[col] === null ? 'NULL' : String(row[col])}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="rounded-md border m-4 overflow-hidden">
+        <Table>
+          <TableHeader className="bg-muted/50">
+            <TableRow>
+              {columns.map(col => <TableHead key={col} className="font-semibold">{col}</TableHead>)}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row, i) => (
+              <TableRow key={i}>
+                {columns.map(col => (
+                  <TableCell key={col} className={`font-mono text-xs ${row[col] === null ? 'text-muted-foreground' : ''}`}>
+                    {row[col] === null ? 'NULL' : String(row[col])}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     );
   };
 
   return (
     <div className="console-layout">
       {/* Editor Pane */}
-      <div className="editor-card">
-        <div className="editor-header">
-          <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', fontWeight: 500 }}>
-            Query Editor
-          </div>
-          <button className="btn btn-primary" onClick={handleRun} disabled={loading}>
-            <Play size={16} /> Run Query (Ctrl+Enter)
-          </button>
-        </div>
-        <textarea 
-          className="sql-textarea"
-          value={sql}
-          onChange={(e) => setSql(e.target.value)}
-          onKeyDown={handleKeyDown}
-          spellCheck={false}
-          placeholder="Enter SQL Query Here..."
-        />
-      </div>
+      <Card className="flex flex-col min-h-[300px]">
+        <CardHeader className="flex flex-row items-center justify-between p-4 bg-muted/20 border-b space-y-0">
+          <CardTitle className="text-sm font-medium text-muted-foreground">Query Editor</CardTitle>
+          <Button size="sm" onClick={handleRun} disabled={loading} className="gap-2">
+            <Play size={14} /> Run Query <span className="opacity-70 text-xs ml-1">(Ctrl+Enter)</span>
+          </Button>
+        </CardHeader>
+        <CardContent className="flex-1 p-0">
+          <Textarea 
+            className="w-full h-full border-none shadow-none rounded-none focus-visible:ring-0 p-6 font-mono text-sm resize-none bg-transparent"
+            value={sql}
+            onChange={(e) => setSql(e.target.value)}
+            onKeyDown={handleKeyDown}
+            spellCheck={false}
+            placeholder="Enter SQL Query Here..."
+          />
+        </CardContent>
+      </Card>
 
       {/* Results Pane */}
-      <div className="editor-card" style={{ flex: 1 }}>
-        <div className="editor-header">
-          <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', fontWeight: 500 }}>
-            Results
-          </div>
+      <Card className="flex-1 flex flex-col overflow-hidden">
+        <CardHeader className="flex flex-row items-center justify-between p-4 bg-muted/20 border-b space-y-0">
+          <CardTitle className="text-sm font-medium text-muted-foreground">Results</CardTitle>
           {result && result.metrics && (
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', gap: '16px' }}>
-              <span><Activity size={14} style={{display: 'inline', verticalAlign: '-2px'}}/> {result.metrics.totalTimeMs}ms</span>
+            <div className="text-xs text-muted-foreground flex gap-4">
+              <span className="flex items-center gap-1"><Activity size={12}/> {result.metrics.totalTimeMs}ms</span>
               <span>Rows: {result.result?.rowCount || 0}</span>
             </div>
           )}
-        </div>
+        </CardHeader>
         
-        <div className="table-container" style={{ borderRadius: 0, border: 'none', borderTop: 'none', height: '100%', overflow: 'auto' }}>
-          {loading && <div style={{padding: '24px', color: 'var(--accent-base)'}}>Executing query...</div>}
+        <CardContent className="flex-1 p-0 overflow-auto">
+          {loading && <div className="p-6 text-primary flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-primary animate-ping"></div> Executing query...</div>}
           
           {error && (
-            <div style={{padding: '24px', color: 'var(--danger-base)', fontFamily: 'var(--font-mono)'}}>
+            <div className="p-6 text-destructive font-mono text-sm">
               [ERROR] {error}
             </div>
           )}
@@ -108,20 +112,20 @@ export default function SqlConsole() {
           {!loading && !error && result && renderTable(result.result?.rows)}
           
           {!loading && !error && !result && (
-            <div style={{padding: '24px', color: 'var(--text-muted)'}}>
+            <div className="p-6 text-muted-foreground text-sm flex h-full items-center justify-center">
               Run a query to see results here
             </div>
           )}
-        </div>
+        </CardContent>
         
         {!loading && !error && result && result.optimization && (
-          <div style={{ padding: '8px 20px', backgroundColor: 'var(--bg-surface-elevated)', borderTop: '1px solid var(--border-subtle)', fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', gap: '12px' }}>
-             <strong style={{color: 'var(--accent-base)'}}>Optimizer:</strong> 
+          <div className="px-5 py-3 bg-muted/30 border-t text-xs text-muted-foreground flex items-center gap-3">
+             <strong className="text-primary font-medium">Optimizer:</strong> 
              <span>{result.optimization.strategy}</span>
-             <span>({result.optimization.reason})</span>
+             <span className="opacity-70">({result.optimization.reason})</span>
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

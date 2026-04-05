@@ -56,18 +56,24 @@ function executeEngine(enginePath, jsonStr, timeout) {
         if (error.code === 'ENOENT') {
           return reject(new EngineError(
             `Engine binary not found at: ${enginePath}`,
-            { enginePath, errorCode: 'ENGINE_NOT_FOUND' }
+            { enginePath },
+            'ENGINE_NOT_FOUND',
+            500
           ));
         }
         if (error.killed) {
           return reject(new EngineError(
             `Engine execution timed out after ${timeout}ms`,
-            { timeout, command: jsonStr }
+            { timeout, command: jsonStr },
+            'ENGINE_TIMEOUT',
+            504
           ));
         }
         return reject(new EngineError(
           `Engine execution failed: ${error.message}`,
-          { stderr: stderr || '', exitCode: error.code }
+          { stderr: stderr || '', exitCode: error.code },
+          'ENGINE_EXECUTION_FAILED',
+          502
         ));
       }
 
@@ -76,14 +82,18 @@ function executeEngine(enginePath, jsonStr, timeout) {
         if (response.status === 'error' || response.error) {
           return reject(new EngineError(
             response.error || 'Engine returned error status',
-            { engineResponse: response }
+            { engineResponse: response },
+            'ENGINE_OPERATION_FAILED',
+            502
           ));
         }
         return resolve(response);
       } catch {
         return reject(new EngineError(
           'Failed to parse engine response as JSON',
-          { stdout, stderr, errorCode: 'ENGINE_PARSE_ERROR' }
+          { stdout, stderr },
+          'ENGINE_PARSE_ERROR',
+          502
         ));
       }
     });

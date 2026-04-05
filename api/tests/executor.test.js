@@ -28,6 +28,25 @@ describe('Query Executor', () => {
         primary_key: 'id',
       });
     });
+
+    test('builds create_index command', () => {
+      const ast = {
+        type: 'CREATE_INDEX',
+        table: 'users',
+        indexName: 'idx_users_name',
+        column: 'name',
+        unique: false,
+      };
+
+      const cmd = buildEngineCommand(ast);
+      expect(cmd).toEqual({
+        operation: 'create_index',
+        table: 'users',
+        index_name: 'idx_users_name',
+        column: 'name',
+        unique: false,
+      });
+    });
   });
 
   describe('INSERT', () => {
@@ -114,6 +133,30 @@ describe('Query Executor', () => {
       expect(cmd.filter).toEqual({ column: 'name', operator: '=', value: 'Yash' });
     });
 
+    test('builds search_by_column for WHERE EQUALS on indexed non-primary key (object metadata)', () => {
+      const ast = {
+        type: 'SELECT',
+        table: 'users',
+        columns: ['*'],
+        condition: { type: 'EQUALS', column: 'email', value: 'a@example.com' },
+      };
+
+      const schemaMap = {
+        users: {
+          primaryKey: 'id',
+          secondaryIndexes: [{ name: 'idx_users_email', column: 'email', unique: true }],
+        },
+      };
+
+      const cmd = buildEngineCommand(ast, schemaMap);
+      expect(cmd).toEqual({
+        operation: 'search_by_column',
+        table: 'users',
+        column: 'email',
+        value: 'a@example.com',
+      });
+    });
+
     test('builds range for WHERE BETWEEN', () => {
       const ast = {
         type: 'SELECT',
@@ -143,6 +186,54 @@ describe('Query Executor', () => {
           filter: { column: 'age', operator: 'BETWEEN', start: 20, end: 29 },
         });
       });
+
+    test('builds select_advanced for join query', () => {
+      const ast = {
+        type: 'SELECT',
+        table: 'users',
+        columns: ['users.id', 'orders.amount'],
+        joins: [
+          {
+            type: 'INNER',
+            table: 'orders',
+            alias: null,
+            on: { left: 'users.id', right: 'orders.user_id' },
+          },
+        ],
+      };
+
+      const cmd = buildEngineCommand(ast, {});
+      expect(cmd).toEqual({ operation: 'select_advanced', ast });
+    });
+
+    test('builds select_advanced for grouped aggregate query', () => {
+      const ast = {
+        type: 'SELECT',
+        table: 'orders',
+        columns: [
+          'user_id',
+          { type: 'AGGREGATE', func: 'COUNT', column: '*', alias: 'orders_count' },
+        ],
+        groupBy: ['user_id'],
+      };
+
+      const cmd = buildEngineCommand(ast, {});
+      expect(cmd).toEqual({ operation: 'select_advanced', ast });
+    });
+
+    test('builds select_advanced for ORDER BY/LIMIT query', () => {
+      const ast = {
+        type: 'SELECT',
+        table: 'users',
+        columns: ['id', 'name'],
+        orderBy: [{ column: 'id', direction: 'DESC' }],
+        limit: 10,
+        offset: 5,
+      };
+
+      const cmd = buildEngineCommand(ast, {});
+      expect(cmd).toEqual({ operation: 'select_advanced', ast });
+    });
   });
 
   describe('Error Cases', () => {
@@ -194,6 +285,16 @@ describe('Query Executor', () => {
       const ast = { type: 'DROP_TABLE', table: 'users' };
       const cmd = buildEngineCommand(ast);
       expect(cmd).toEqual({ operation: 'drop_table', table: 'users' });
+    });
+
+    test('builds drop index command', () => {
+      const ast = { type: 'DROP_INDEX', table: 'users', indexName: 'idx_users_name' };
+      const cmd = buildEngineCommand(ast);
+      expect(cmd).toEqual({
+        operation: 'drop_index',
+        table: 'users',
+        index_name: 'idx_users_name',
+      });
     });
   });
 });
@@ -272,5 +373,37 @@ describe('Query Optimizer', () => {
 
     expect(result.optimizationHint.strategy).toBe('full_scan_filter');
     expect(result.optimizationHint.reason).toContain('not supported yet');
+  });
+
+  test('returns advanced_select for join/group-by queries', () => {
+    const ast = {
+      type: 'SELECT',
+      table: 'users',
+      columns: ['users.id', { type: 'AGGREGATE', func: 'COUNT', column: '*', alias: 'cnt' }],
+      joins: [
+        {
+          type: 'INNER',
+          table: 'orders',
+          on: { left: 'users.id', right: 'orders.user_id' },
+        },
+      ],
+      groupBy: ['users.id'],
+    };
+
+    const result = optimize(ast, { primaryKey: 'id' });
+    expect(result.optimizationHint.strategy).toBe('advanced_select');
+  });
+
+  test('returns advanced_select for ORDER BY/LIMIT queries', () => {
+    const ast = {
+      type: 'SELECT',
+      table: 'users',
+      columns: ['id', 'name'],
+      orderBy: [{ column: 'id', direction: 'DESC' }],
+      limit: 3,
+    };
+
+    const result = optimize(ast, { primaryKey: 'id' });
+    expect(result.optimizationHint.strategy).toBe('advanced_select');
   });
 });

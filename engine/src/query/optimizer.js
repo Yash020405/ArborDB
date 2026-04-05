@@ -9,6 +9,26 @@ function optimize(ast, tableMetadata = null) {
     return { ...ast, optimizationHint: { strategy: 'direct', reason: 'Non-SELECT query' } };
   }
 
+  const hasAdvancedFeatures =
+    (Array.isArray(ast.joins) && ast.joins.length > 0) ||
+    (Array.isArray(ast.groupBy) && ast.groupBy.length > 0) ||
+    (Array.isArray(ast.columns) && ast.columns.some((col) => col && typeof col === 'object' && col.type === 'AGGREGATE')) ||
+    Boolean(ast.having) ||
+    (Array.isArray(ast.orderBy) && ast.orderBy.length > 0) ||
+    Number.isInteger(ast.limit) ||
+    Number.isInteger(ast.offset);
+
+  if (hasAdvancedFeatures) {
+    return {
+      ...ast,
+      optimizationHint: {
+        strategy: 'advanced_select',
+        reason: 'Join/group-by/aggregate query executed via advanced planner',
+        estimatedCost: 'high',
+      },
+    };
+  }
+
   if (!ast.condition) {
     return {
       ...ast,
@@ -34,6 +54,14 @@ function optimize(ast, tableMetadata = null) {
   }
 
   const { primaryKey, secondaryIndexes = [] } = tableMetadata;
+  const hasSecondaryIndex = (column) => {
+    if (!Array.isArray(secondaryIndexes)) return false;
+    return secondaryIndexes.some((idx) => {
+      if (typeof idx === 'string') return idx === column;
+      if (idx && typeof idx === 'object') return idx.column === column;
+      return false;
+    });
+  };
 
   if (condition.type === 'EQUALS') {
     if (condition.column === primaryKey) {
@@ -49,7 +77,7 @@ function optimize(ast, tableMetadata = null) {
       };
     }
 
-    if (secondaryIndexes.includes(condition.column)) {
+    if (hasSecondaryIndex(condition.column)) {
       return {
         ...ast,
         optimizationHint: {
@@ -91,7 +119,7 @@ function optimize(ast, tableMetadata = null) {
       ...ast,
       optimizationHint: {
         strategy: 'full_scan_filter',
-        reason: secondaryIndexes.includes(condition.column)
+        reason: hasSecondaryIndex(condition.column)
           ? `Secondary index range scans are not supported yet for '${condition.column}', using full scan with range filter`
           : `No index on column '${condition.column}', full scan with range filter`,
         estimatedCost: 'high',

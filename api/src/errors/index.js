@@ -37,6 +37,36 @@ class ParseError extends ArborDBError {
   }
 }
 
+class QueryValidationError extends ArborDBError {
+  constructor(message, details = null) {
+    super(message, 400, 'QUERY_VALIDATION_ERROR', details);
+  }
+}
+
+class QueryTokenizeError extends ArborDBError {
+  constructor(message, details = null) {
+    super(message, 400, 'QUERY_TOKENIZE_ERROR', details);
+  }
+}
+
+class QueryParseError extends ArborDBError {
+  constructor(message, details = null) {
+    super(message, 400, 'QUERY_PARSE_ERROR', details);
+  }
+}
+
+class QueryPlanError extends ArborDBError {
+  constructor(message, details = null) {
+    super(message, 422, 'QUERY_PLAN_ERROR', details);
+  }
+}
+
+class QueryExecutionError extends ArborDBError {
+  constructor(message, details = null) {
+    super(message, 500, 'QUERY_EXECUTION_ERROR', details);
+  }
+}
+
 class ValidationError extends ArborDBError {
   constructor(message, details = null) {
     super(message, 422, 'VALIDATION_ERROR', details);
@@ -44,8 +74,8 @@ class ValidationError extends ArborDBError {
 }
 
 class EngineError extends ArborDBError {
-  constructor(message, details = null) {
-    super(message, 502, 'ENGINE_ERROR', details);
+  constructor(message, details = null, errorCode = 'ENGINE_ERROR', statusCode = 502) {
+    super(message, statusCode, errorCode, details);
   }
 }
 
@@ -70,6 +100,11 @@ class RateLimitError extends ArborDBError {
 module.exports = {
   ArborDBError,
   ParseError,
+  QueryValidationError,
+  QueryTokenizeError,
+  QueryParseError,
+  QueryPlanError,
+  QueryExecutionError,
   ValidationError,
   EngineError,
   UploadError,

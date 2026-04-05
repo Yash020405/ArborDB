@@ -24,6 +24,21 @@ int main() {
     store.insert("employees", 5, {{"id",5},{"name","Eve"},  {"dept","Marketing"}});
 
     {
+        auto m = store.createSecondaryIndex("employees", "idx_employees_dept", "dept", false);
+        assert(m.rows_returned == 5);
+    }
+
+    {
+        bool threw = false;
+        try {
+            store.createSecondaryIndex("employees", "idx_employees_dept", "dept", false);
+        } catch (...) {
+            threw = true;
+        }
+        assert(threw);
+    }
+
+    {
         auto [rows, m] = store.searchByColumn("employees", "dept", "Engineering");
         assert(rows.size() == 3);
         assert(m.rows_returned == 3);
@@ -53,6 +68,17 @@ int main() {
         auto [rows, m] = store.searchByColumn("employees", "name", "Bob");
         assert(rows.size() == 1);
         assert(rows[0]["id"] == 2);
+    }
+
+    {
+        auto m = store.dropSecondaryIndex("employees", "idx_employees_dept");
+        assert(m.rows_returned == 5);
+    }
+
+    {
+        auto [rows, m] = store.searchByColumn("employees", "dept", "Engineering");
+        assert(rows.size() == 3);
+        assert(m.rows_returned == 3);
     }
 
     std::filesystem::remove_all(testDir);

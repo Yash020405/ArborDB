@@ -6,12 +6,20 @@ void SecondaryIndex::addColumn(const std::string& columnName) {
     index_.emplace(columnName, std::unordered_map<std::string, std::vector<int64_t>>{});
 }
 
+void SecondaryIndex::removeColumn(const std::string& columnName) {
+    index_.erase(columnName);
+}
+
 bool SecondaryIndex::hasColumn(const std::string& columnName) const {
     return index_.count(columnName) > 0;
 }
 
 void SecondaryIndex::insertForColumn(const std::string& columnName, const std::string& value, int64_t primaryKey) {
-    index_[columnName][value].push_back(primaryKey);
+    auto colIt = index_.find(columnName);
+    if (colIt == index_.end()) {
+        return;
+    }
+    colIt->second[value].push_back(primaryKey);
 }
 
 std::vector<int64_t> SecondaryIndex::lookupColumn(const std::string& columnName, const std::string& value) const {

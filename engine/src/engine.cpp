@@ -16,6 +16,8 @@ nlohmann::json Engine::execute(const nlohmann::json& command) {
         if (op == "insert")       return handleInsert(command);
         if (op == "search")       return handleSearch(command);
         if (op == "search_by_column") return handleSearchByColumn(command);
+        if (op == "create_index") return handleCreateIndex(command);
+        if (op == "drop_index")   return handleDropIndex(command);
         if (op == "range")        return handleRange(command);
         if (op == "full_scan")    return handleFullScan(command);
         if (op == "update")       return handleUpdate(command);
@@ -147,6 +149,36 @@ nlohmann::json Engine::handleSearchByColumn(const nlohmann::json& cmd) {
 
     auto [rows, m] = store_.searchByColumn(tableName, column, value);
     return okResponse(rows, m);
+}
+
+nlohmann::json Engine::handleCreateIndex(const nlohmann::json& cmd) {
+    if (!cmd.contains("table") || !cmd.contains("index_name") || !cmd.contains("column")) {
+        return errorResponse("create_index requires 'table', 'index_name', and 'column'");
+    }
+
+    std::lock_guard<std::mutex> lock(mu_);
+
+    const std::string tableName = cmd["table"].get<std::string>();
+    const std::string indexName = cmd["index_name"].get<std::string>();
+    const std::string column = cmd["column"].get<std::string>();
+    const bool unique = cmd.value("unique", false);
+
+    Metrics m = store_.createSecondaryIndex(tableName, indexName, column, unique);
+    return okResponse({}, m);
+}
+
+nlohmann::json Engine::handleDropIndex(const nlohmann::json& cmd) {
+    if (!cmd.contains("table") || !cmd.contains("index_name")) {
+        return errorResponse("drop_index requires 'table' and 'index_name'");
+    }
+
+    std::lock_guard<std::mutex> lock(mu_);
+
+    const std::string tableName = cmd["table"].get<std::string>();
+    const std::string indexName = cmd["index_name"].get<std::string>();
+
+    Metrics m = store_.dropSecondaryIndex(tableName, indexName);
+    return okResponse({}, m);
 }
 
 nlohmann::json Engine::handleUpdate(const nlohmann::json& cmd) {

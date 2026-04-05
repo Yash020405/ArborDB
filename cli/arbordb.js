@@ -15,7 +15,7 @@ const { printTable } = require('./formatter');
 const HISTORY_FILE = path.join(process.env.HOME || process.env.USERPROFILE, '.arbordb_history');
 
 console.log(chalk.green('Welcome to the ArborDB monitor.  Commands end with ; or \\g.'));
-console.log(chalk.green(`Connected to engine: ${engine.useMockEngine() ? 'mock (in-memory)' : 'native (C++)'}`));
+console.log(chalk.green('Connected to engine: native (C++)'));
 console.log(chalk.grey('Type \'.help\' for help.\n'));
 
 const rl = readline.createInterface({

@@ -10,13 +10,47 @@ function buildEngineCommand(ast, schemaMap = {}) {
 
   switch (ast.type) {
     case 'CREATE_TABLE': return buildCreateTable(ast);
+    case 'CREATE_INDEX': return buildCreateIndex(ast);
     case 'INSERT': return buildInsert(ast, schemaMap);
     case 'SELECT': return buildSelect(ast, schemaMap);
     case 'UPDATE': return buildUpdate(ast);
     case 'DELETE': return buildDelete(ast);
+    case 'DROP_INDEX': return buildDropIndex(ast);
     case 'DROP_TABLE': return { operation: 'drop_table', table: ast.table };
     default: throw new Error(`Unsupported operation type: ${ast.type}`);
   }
+}
+
+function buildCreateIndex(ast) {
+  return {
+    operation: 'create_index',
+    table: ast.table,
+    index_name: ast.indexName,
+    column: ast.column,
+    unique: Boolean(ast.unique),
+  };
+}
+
+function buildDropIndex(ast) {
+  return {
+    operation: 'drop_index',
+    table: ast.table,
+    index_name: ast.indexName,
+  };
+}
+
+function hasSecondaryIndexOnColumn(secondaryIndexes, column) {
+  if (!Array.isArray(secondaryIndexes)) return false;
+
+  return secondaryIndexes.some((idx) => {
+    if (typeof idx === 'string') {
+      return idx === column;
+    }
+    if (idx && typeof idx === 'object') {
+      return idx.column === column;
+    }
+    return false;
+  });
 }
 
 function buildCreateTable(ast) {
@@ -71,6 +105,21 @@ function buildInsert(ast, schemaMap) {
 }
 
 function buildSelect(ast, schemaMap) {
+  const hasJoin = Array.isArray(ast.joins) && ast.joins.length > 0;
+  const hasGroupBy = Array.isArray(ast.groupBy) && ast.groupBy.length > 0;
+  const hasAggregate = Array.isArray(ast.columns) && ast.columns.some(
+    (col) => col && typeof col === 'object' && col.type === 'AGGREGATE'
+  );
+  const hasOrder = Array.isArray(ast.orderBy) && ast.orderBy.length > 0;
+  const hasPagination = Number.isInteger(ast.limit) || Number.isInteger(ast.offset);
+
+  if (hasJoin || hasGroupBy || hasAggregate || ast.having || hasOrder || hasPagination) {
+    return {
+      operation: 'select_advanced',
+      ast,
+    };
+  }
+
   if (!ast.condition) {
     return { operation: 'full_scan', table: ast.table };
   }
@@ -97,7 +146,7 @@ function buildSelect(ast, schemaMap) {
         };
       }
 
-      if (!tableSchema.secondaryIndexes.includes(condition.column)) {
+      if (!hasSecondaryIndexOnColumn(tableSchema.secondaryIndexes, condition.column)) {
         return {
           operation: 'full_scan',
           table: ast.table,

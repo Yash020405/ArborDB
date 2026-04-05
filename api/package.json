@@ -8,6 +8,7 @@
     "dev": "node --watch src/server.js",
     "test": "jest --verbose --forceExit --detectOpenHandles",
     "test:coverage": "jest --coverage --forceExit --detectOpenHandles",
+    "benchmark:index": "node scripts/benchmark-index-vs-non-index.js",
     "lint": "eslint --config eslint.config.js \"src/**/*.js\" \"tests/**/*.js\"",
     "lint:fix": "eslint --config eslint.config.js \"src/**/*.js\" \"tests/**/*.js\" --fix"
   },

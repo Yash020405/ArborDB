@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const request = require('supertest');
 const { createApp } = require('../src/app');
 const engine = require('../src/engine');
@@ -7,15 +9,42 @@ const metricsService = require('../src/services/metrics');
 const { parseCSV } = require('../src/services/fileParser');
 
 let app;
+let tempDataDir;
+
+const previousDataDir = process.env.DATA_DIR;
+const previousRateLimitMaxRequests = process.env.RATE_LIMIT_MAX_REQUESTS;
 
 beforeAll(() => {
-  process.env.USE_MOCK_ENGINE = 'true';
+  tempDataDir = path.resolve(__dirname, `../.tmp/upload-${Date.now()}`);
+
+  process.env.DATA_DIR = tempDataDir;
+  process.env.RATE_LIMIT_MAX_REQUESTS = '1000';
+
   app = createApp();
 });
 
 beforeEach(() => {
+  fs.rmSync(tempDataDir, { recursive: true, force: true });
+  fs.mkdirSync(path.join(tempDataDir, 'tables'), { recursive: true });
+
   engine.reset();
   metricsService.reset();
+});
+
+afterAll(() => {
+  fs.rmSync(tempDataDir, { recursive: true, force: true });
+
+  if (previousDataDir === undefined) {
+    delete process.env.DATA_DIR;
+  } else {
+    process.env.DATA_DIR = previousDataDir;
+  }
+
+  if (previousRateLimitMaxRequests === undefined) {
+    delete process.env.RATE_LIMIT_MAX_REQUESTS;
+  } else {
+    process.env.RATE_LIMIT_MAX_REQUESTS = previousRateLimitMaxRequests;
+  }
 });
 
 describe('File Upload', () => {

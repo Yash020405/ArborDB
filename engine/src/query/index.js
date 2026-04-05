@@ -6,6 +6,7 @@ const { tokenize, TokenType, KEYWORDS } = require('./tokenizer');
 const { parse: parseTokens } = require('./parser');
 const { buildEngineCommand } = require('./executor');
 const { optimize } = require('./optimizer');
+const { executeAdvancedSelect } = require('./advanced');
 
 // Parse SQL string into an AST.
 function parse(sql) {
@@ -20,7 +21,7 @@ function processQuery(sql, schemaMap = {}, tableMetadata = null) {
 
   const meta = tableMetadata || (schemaMap[ast.table] ? {
     primaryKey: schemaMap[ast.table].primaryKey,
-    secondaryIndexes: schemaMap[ast.table].secondaryIndexes || [],
+    secondaryIndexes: schemaMap[ast.table].secondaryIndexes || schemaMap[ast.table].secondaryIndexDefs || [],
   } : null);
 
   const optimized = optimize(ast, meta);
@@ -36,6 +37,7 @@ module.exports = {
   parseTokens,
   buildEngineCommand,
   optimize,
+  executeAdvancedSelect,
   TokenType,
   KEYWORDS,
 };

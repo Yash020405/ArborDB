@@ -45,13 +45,21 @@ describe('SQL Tokenizer', () => {
     });
 
     test('tokenizes operators and punctuation', () => {
-      const tokens = tokenize('= * ( ) , ;');
+      const tokens = tokenize('= * ( ) , ; .');
       expect(tokens[0]).toMatchObject({ type: TokenType.EQUALS });
       expect(tokens[1]).toMatchObject({ type: TokenType.STAR });
       expect(tokens[2]).toMatchObject({ type: TokenType.LPAREN });
       expect(tokens[3]).toMatchObject({ type: TokenType.RPAREN });
       expect(tokens[4]).toMatchObject({ type: TokenType.COMMA });
       expect(tokens[5]).toMatchObject({ type: TokenType.SEMICOLON });
+      expect(tokens[6]).toMatchObject({ type: TokenType.DOT });
+    });
+
+    test('tokenizes qualified identifiers', () => {
+      const tokens = tokenize('users.id = orders.user_id');
+      expect(tokens[0]).toMatchObject({ type: TokenType.IDENTIFIER, value: 'users' });
+      expect(tokens[1]).toMatchObject({ type: TokenType.DOT, value: '.' });
+      expect(tokens[2]).toMatchObject({ type: TokenType.IDENTIFIER, value: 'id' });
     });
   });
 
@@ -83,6 +91,23 @@ describe('SQL Tokenizer', () => {
       const keywords = tokens.filter(t => t.type === TokenType.KEYWORD).map(t => t.value);
       expect(keywords).toContain('BETWEEN');
       expect(keywords).toContain('AND');
+    });
+
+    test('tokenizes CREATE UNIQUE INDEX statement', () => {
+      const tokens = tokenize('CREATE UNIQUE INDEX idx_users_email ON users (email)');
+      const values = tokens.map(t => t.value);
+      expect(values).toEqual([
+        'CREATE', 'UNIQUE', 'INDEX', 'idx_users_email', 'ON', 'users', '(', 'email', ')', null,
+      ]);
+    });
+
+    test('tokenizes ORDER BY with LIMIT/OFFSET', () => {
+      const tokens = tokenize('SELECT * FROM users ORDER BY id DESC LIMIT 10 OFFSET 5');
+      const keywords = tokens
+        .filter(t => t.type === TokenType.KEYWORD)
+        .map(t => t.value);
+
+      expect(keywords).toEqual(['SELECT', 'FROM', 'ORDER', 'BY', 'DESC', 'LIMIT', 'OFFSET']);
     });
   });
 

@@ -1,149 +1,68 @@
 # ArborDB
 
-ArborDB is a local database system built for learning and systems engineering practice. It combines:
+ArborDB is a native-first local database system with a C++ storage engine, a Node.js API, a React frontend, and a CLI.
+The project emphasizes predictable query behavior, index-aware execution, and testable observability.
 
-- A native C++ storage engine
-- A Node.js API layer for SQL parsing and execution
-- A React frontend for querying and monitoring
-- A Node.js CLI for interactive usage
+## What Is Implemented
 
-The project focuses on correctness, observability, and clear separation between query planning and storage execution.
+- SQL lifecycle: `CREATE TABLE`, `DROP TABLE`, `CREATE INDEX`, `CREATE UNIQUE INDEX`, `DROP INDEX`
+- DML: `INSERT`, `SELECT`, `UPDATE`, `DELETE`
+- Query features: `INNER JOIN`, aggregates (`COUNT`, `SUM`, `AVG`, `MIN`, `MAX`), `GROUP BY`, `HAVING`, `ORDER BY`, `LIMIT`, `OFFSET`
+- Index-aware planning: primary-key lookup, secondary-index lookup, full-scan filter fallback
+- Uploads: CSV/XLSX ingestion through `POST /upload`
+- Observability: per-query metrics, recent query feed, aggregate engine/API metrics
+- Persistence: native table/schema/WAL artifacts on disk
 
 ## Architecture
 
 ```text
-Client (Frontend or CLI)
-  -> API (/query, /upload, /tables, /metrics)
-  -> SQL tokenizer/parser/executor/optimizer
-  -> Engine bridge (mock or native)
-  -> Native storage engine (B+ tree, schema, WAL log, persistence)
-  -> Disk files under data/tables
+Frontend / CLI
+  -> API routes (/query, /upload, /tables, /metrics)
+  -> SQL pipeline (tokenize -> parse -> plan -> execute)
+  -> Native engine bridge
+  -> C++ engine (B+ tree + storage + schema + WAL)
+  -> Disk persistence (data/tables)
 ```
 
-## Current Scope
+## Setup Instructions
 
-Implemented:
-
-- Table lifecycle: `CREATE TABLE`, `DROP TABLE`
-- Data operations: `INSERT`, `SELECT`, `UPDATE`, `DELETE`
-- Predicate support: `=` and `BETWEEN`
-- Primary-key and secondary-index aware execution paths
-- CSV and XLSX upload pipeline through API
-- Query metrics and recent-query tracking
-- Persistent native storage on disk
-
-Not implemented yet:
-
-- Transaction semantics (BEGIN/COMMIT/ROLLBACK)
-- Multi-user auth/session management
-- Distributed replication
-
-## Repository Layout
-
-```text
-api/        Express API, query execution, upload services, tests
-cli/        Interactive CLI client
-engine/     C++ engine and JS query layer
-frontend/   React UI (SQL console, table browser, metrics dashboard)
-data/       Persistent table/schema/WAL files
-```
-
-## Query and Execution Behavior
-
-Supported SQL forms:
-
-```sql
-CREATE TABLE users (id INT PRIMARY KEY, name STRING, age INT);
-INSERT INTO users VALUES (1, 'Alice', 30);
-SELECT * FROM users WHERE id = 1;
-SELECT * FROM users WHERE age BETWEEN 20 AND 40;
-UPDATE users SET name = 'Alicia' WHERE id = 1;
-DELETE FROM users WHERE id = 2;
-DROP TABLE users;
-```
-
-Execution strategies currently used:
-
-- `WHERE pk = value` -> primary key lookup (`search`)
-- `WHERE secondary_col = value` -> secondary index lookup (`search_by_column`)
-- `WHERE pk BETWEEN a AND b` -> primary key range scan (`range`)
-- `WHERE non_pk BETWEEN a AND b` -> full scan with filter (`full_scan` + filter)
-
-Indexing notes:
-
-- There is no user-facing `CREATE INDEX` command in the current SQL grammar.
-- Index usage is automatic: the planner uses primary/secondary index paths when available and falls back to full scan + filter when not available.
-
-Notes on consistency:
-
-- Optimizer hints are aligned with current executable engine capabilities.
-- Secondary-index range scans are not executed yet; non-primary `BETWEEN` falls back to filtered full scan.
-
-## Persistence Model
-
-In native mode, tables are persisted under the configured data directory:
-
-```text
-data/tables/
-  <table>.schema.json
-  <table>.db
-  wal.log
-```
-
-Behavior verified by tests:
-
-- Create/insert/select are persisted to disk
-- Drop removes schema and data artifacts
-- API metadata endpoints (`/tables`, `/metrics`) reflect persisted state
-
-## Metrics and Observability
-
-API query responses include merged metrics:
-
-- Parse/total timing from API
-- Engine timing
-- Disk reads
-- Node traversals
-- Rows returned / affected rows
-
-The API also provides:
-
-- `GET /metrics` for aggregates and engine summary
-- `GET /metrics/recent` for recent query log
-
-`/metrics` tracks and exposes differences between indexed lookup paths and scan/filter paths via traversal and timing counters.
-
-## Prerequisites
+### Prerequisites
 
 - Node.js 18+
 - npm 9+
 - g++ with C++17 support
 
-## Quick Start (Fresh Clone)
-
-One-command setup and run:
-
-```bash
-./scripts/bootstrap.sh up
-```
-
-Other useful bootstrap commands:
+### Fast Setup (Recommended)
 
 ```bash
 ./scripts/bootstrap.sh setup
-./scripts/bootstrap.sh check
+```
+
+### Full Local Run
+
+Terminal 1:
+
+```bash
 ./scripts/bootstrap.sh api
+```
+
+Terminal 2:
+
+```bash
 ./scripts/bootstrap.sh frontend
+```
+
+Terminal 3 (optional):
+
+```bash
 ./scripts/bootstrap.sh cli
 ```
 
-If you prefer manual setup, use the steps below.
+### Manual Setup (If You Need Fine Control)
+
+Build native engine:
 
 ```bash
-git clone https://github.com/Yash020405/ArborDB.git
-cd ArborDB
-
-# Build native engine
 cd engine
 mkdir -p build
 g++ -std=c++17 -O2 \
@@ -158,175 +77,166 @@ g++ -std=c++17 -O2 \
   src/storage/serializer.cpp \
   src/storage/table_store.cpp \
   -o build/engine
+```
 
-# Install dependencies
+Install dependencies:
+
+```bash
 cd ../api && npm install
 cd ../frontend && npm install
 cd ../cli && npm install
-
-# Start API (terminal 1)
-cd ../api && npm start
-
-# Start frontend (terminal 2)
-cd ../frontend && npm run dev
-
-# Optional: run CLI (terminal 3)
-cd ../cli && node arbordb.js
 ```
 
-After startup:
-
-- API: `http://localhost:3000`
-- Frontend: Vite default URL shown in terminal (usually `http://localhost:5173`)
-
-## Setup
-
-### 1. Build the native engine
-
-There is currently no checked-in CMake file in `engine/`, so build with g++ directly:
+Optional API environment:
 
 ```bash
-cd engine
-mkdir -p build
-
-g++ -std=c++17 -O2 \
-  -I./vendor -I./src \
-  main.cpp \
-  src/engine.cpp \
-  src/wal.cpp \
-  src/disk/pager.cpp \
-  src/schema/schema.cpp \
-  src/storage/btree.cpp \
-  src/storage/secondary_index.cpp \
-  src/storage/serializer.cpp \
-  src/storage/table_store.cpp \
-  -o build/engine
-```
-
-### 2. Install API dependencies
-
-```bash
-cd api
-npm install
-```
-
-Optional API environment setup:
-
-```bash
+cd ../api
 cp .env.example .env
 ```
 
-Important environment variables:
+Important API env variables:
 
-- `USE_MOCK_ENGINE=true|false`
 - `ENGINE_PATH=../engine/build/engine`
 - `DATA_DIR=../data`
 
-### 3. Install frontend dependencies
+## Professional User Flow
 
-```bash
-cd frontend
-npm install
+1. Initialize services.
+2. Validate health (`GET /health`) and confirm engine type via `GET /metrics`.
+3. Create schema objects (`CREATE TABLE`, then optional `CREATE INDEX` for hot predicates).
+4. Load data through `INSERT` statements or `POST /upload` (CSV/XLSX).
+5. Run operational queries from frontend SQL console or CLI.
+6. Use optimizer feedback (`response.optimization.strategy`) to verify index usage.
+7. Track latency/traversal behavior in `response.metrics` and aggregate counters from `GET /metrics`.
+8. Evolve schema safely: add/drop indexes and re-check strategy + metrics.
+9. Before release, execute the full validation gate (`./scripts/bootstrap.sh check`).
+
+## Query Examples
+
+```sql
+CREATE TABLE users (id INT PRIMARY KEY, name STRING, email STRING, age INT);
+CREATE INDEX idx_users_email ON users (email);
+
+INSERT INTO users VALUES (1, 'Alice', 'alice@arbordb.local', 30);
+INSERT INTO users VALUES (2, 'Bob', 'bob@arbordb.local', 27);
+
+SELECT * FROM users WHERE id = 1;
+SELECT * FROM users WHERE email = 'alice@arbordb.local';
+SELECT * FROM users WHERE age BETWEEN 25 AND 40;
+
+SELECT u.id, o.amount
+FROM users u
+JOIN orders o ON u.id = o.user_id
+ORDER BY o.amount DESC
+LIMIT 10 OFFSET 0;
+
+SELECT user_id, COUNT(*) AS orders_count, SUM(amount) AS total_amount
+FROM orders
+GROUP BY user_id
+HAVING orders_count = 2
+ORDER BY total_amount DESC;
 ```
 
-Optional frontend environment variable:
+## Index vs Non-Index Metrics
 
-- `VITE_API_BASE_URL=http://localhost:3000`
-
-### 4. Install CLI dependencies
-
-```bash
-cd cli
-npm install
-```
-
-## Running the System
-
-Start API:
+Measured on 2026-04-05 using:
 
 ```bash
 cd api
-npm start
+npm run benchmark:index
 ```
 
-Start frontend:
+Benchmark workload:
+
+- Dataset: `perf_users` with 750 rows
+- Predicate: `email = 'user_615@arbordb.local'`
+- Iterations per mode: 20
+
+Results:
+
+| Mode | Strategy | Avg Nodes Traversed | P95 Nodes Traversed | Avg Total Time (ms) | P95 Total Time (ms) |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Non-indexed | `full_scan_filter` | 253 | 253 | 22.70 | 34 |
+| Indexed | `secondary_index_lookup` | 5 | 5 | 17.65 | 24 |
+
+Observed improvement:
+
+- Traversal reduction: 98.02%
+- Total-time reduction: 22.25%
+
+## Query Error Taxonomy (Hardened)
+
+`POST /query` now emits stage-specific, stable error codes:
+
+| Stage | HTTP | Error Code | Meaning |
+| --- | ---: | --- | --- |
+| Request validation | 400 | `QUERY_VALIDATION_ERROR` | Invalid/missing SQL payload |
+| Tokenization | 400 | `QUERY_TOKENIZE_ERROR` | Lexical failure (illegal token/character) |
+| Parsing | 400 | `QUERY_PARSE_ERROR` | SQL grammar/syntax failure |
+| Planning | 422 | `QUERY_PLAN_ERROR` | Query cannot be translated into executable command |
+| Execution (query layer) | 500 | `QUERY_EXECUTION_ERROR` | Advanced execution path failed before engine completes |
+| Native engine operation | 502 | `ENGINE_OPERATION_FAILED` | Engine returned an operation-level error |
+| Native binary lookup | 500 | `ENGINE_NOT_FOUND` | Engine binary path invalid/missing |
+| Native timeout | 504 | `ENGINE_TIMEOUT` | Engine call exceeded timeout |
+| Native protocol/JSON | 502 | `ENGINE_PARSE_ERROR` | Engine response could not be parsed |
+
+All error responses follow:
+
+```json
+{
+  "error": {
+    "code": "...",
+    "message": "...",
+    "timestamp": "ISO-8601",
+    "details": {}
+  }
+}
+```
+
+## Pre-Commit Validation (Required)
+
+Single command:
 
 ```bash
-cd frontend
-npm run dev
+./scripts/bootstrap.sh check
 ```
 
-Run CLI:
+This runs:
 
-```bash
-cd cli
-node arbordb.js
-```
+- API lint
+- CLI lint
+- Frontend lint
+- Native engine build
+- API test suite (`--runInBand`)
+- Frontend production build
 
-## Quality Gates
-
-### Linting
-
-API:
+Targeted checks used frequently during query work:
 
 ```bash
 cd api
-npm run lint
-```
-
-CLI:
-
-```bash
-cd cli
-npm run lint
-```
-
-Frontend:
-
-```bash
-cd frontend
-npm run lint
-```
-
-### Tests
-
-API suite:
-
-```bash
-cd api
-npm test -- --runInBand
-```
-
-Current tested areas include:
-
-- SQL tokenizer/parser/executor
-- API endpoints and error handling
-- Upload and validation services
-- Metrics consistency behavior
-- Native persistence lifecycle (runs when native engine binary exists)
-
-Targeted verification for error handling and indexing behavior:
-
-```bash
-cd api
-npm test -- --runInBand tests/error-handling.test.js tests/executor.test.js tests/metrics-consistency.test.js
+npm test -- --runInBand tests/error-handling.test.js tests/api.test.js tests/metrics-consistency.test.js
 ```
 
 ## API Endpoints
 
 - `POST /query` execute SQL
-- `POST /upload` upload CSV/XLSX into existing table
+- `POST /upload` upload CSV/XLSX into an existing table
 - `GET /tables` list tables and metadata
-- `GET /tables/:name` table details
-- `GET /metrics` aggregate metrics
-- `GET /metrics/recent` recent query events
-- `GET /health` service health
+- `GET /tables/:name` get table details
+- `GET /metrics` aggregate metrics and engine summary
+- `GET /metrics/recent` recent query history
+- `GET /health` health/status check
 
-## Development Notes
+## Repository Layout
 
-- Keep parser/executor output and engine operation contract in sync.
-- Prefer schema-aware command generation for stable behavior across mock/native modes.
-- For native mode, ensure `engine/build/engine` is rebuilt after C++ changes.
+```text
+api/        Express API, query pipeline, upload services, tests
+cli/        Interactive CLI client
+engine/     C++ engine and JS query planner/parser modules
+frontend/   React UI (console, browser, metrics dashboard)
+data/       Table/schema/WAL artifacts
+scripts/    Bootstrap and cross-project dev helpers
+```
 
 ## License
 

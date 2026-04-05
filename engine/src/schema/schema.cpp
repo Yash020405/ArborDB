@@ -42,6 +42,14 @@ void SchemaManager::persistSchema(const TableSchema& schema) const {
     for (const auto& col : schema.columns) {
         j["columns"].push_back({{"name", col.name}, {"type", columnTypeToString(col.type)}});
     }
+    j["secondary_indexes"] = nlohmann::json::array();
+    for (const auto& idx : schema.secondaryIndexes) {
+        j["secondary_indexes"].push_back({
+            {"name", idx.name},
+            {"column", idx.column},
+            {"unique", idx.unique}
+        });
+    }
     std::ofstream out(schemaPath(schema.tableName));
     if (!out.is_open()) {
         throw std::runtime_error("Cannot write schema for table: " + schema.tableName);
@@ -65,6 +73,32 @@ TableSchema SchemaManager::parseSchemaFile(const std::string& path) const {
         c.type = parseColumnType(col["type"].get<std::string>());
         schema.columns.push_back(c);
     }
+
+    if (j.contains("secondary_indexes") && j["secondary_indexes"].is_array()) {
+        for (const auto& idx : j["secondary_indexes"]) {
+            // Backward-compatibility: allow legacy string entries.
+            if (idx.is_string()) {
+                const std::string col = idx.get<std::string>();
+                schema.secondaryIndexes.push_back({
+                    "idx_" + schema.tableName + "_" + col,
+                    col,
+                    false,
+                });
+                continue;
+            }
+
+            if (!idx.is_object() || !idx.contains("name") || !idx.contains("column")) {
+                continue;
+            }
+
+            SecondaryIndexDef def;
+            def.name = idx["name"].get<std::string>();
+            def.column = idx["column"].get<std::string>();
+            def.unique = idx.value("unique", false);
+            schema.secondaryIndexes.push_back(def);
+        }
+    }
+
     return schema;
 }
 
@@ -72,6 +106,15 @@ void SchemaManager::createTable(const TableSchema& schema) {
     if (tableExists(schema.tableName)) {
         throw std::runtime_error("Table already exists: " + schema.tableName);
     }
+    persistSchema(schema);
+    cache_[schema.tableName] = schema;
+}
+
+void SchemaManager::updateTable(const TableSchema& schema) {
+    if (!tableExists(schema.tableName)) {
+        throw std::runtime_error("Table does not exist: " + schema.tableName);
+    }
+
     persistSchema(schema);
     cache_[schema.tableName] = schema;
 }

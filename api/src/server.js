@@ -5,7 +5,6 @@
 require('dotenv').config();
 
 const { createApp } = require('./app');
-const engine = require('./engine');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const NODE_ENV = process.env.NODE_ENV || 'development';
@@ -18,7 +17,7 @@ const server = app.listen(PORT, () => {
   console.log('  ─────────────────────────────────────');
   console.log(`  Environment : ${NODE_ENV}`);
   console.log(`  Port        : ${PORT}`);
-  console.log(`  Engine      : ${engine.useMockEngine() ? 'Mock (in-memory)' : 'Native (C++)'}`);
+  console.log('  Engine      : Native (C++)');
   console.log(`  URL         : http://localhost:${PORT}`);
   console.log('');
   console.log('  Endpoints:');

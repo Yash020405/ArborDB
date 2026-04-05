@@ -12,6 +12,7 @@ const TokenType = Object.freeze({
   STAR:         'STAR',
   LPAREN:       'LPAREN',
   RPAREN:       'RPAREN',
+  DOT:          'DOT',
   COMMA:        'COMMA',
   SEMICOLON:    'SEMICOLON',
   EOF:          'EOF',
@@ -24,6 +25,10 @@ const KEYWORDS = new Set([
   'FLOAT', 'DOUBLE', 'BOOLEAN', 'BOOL',
   'PRIMARY', 'KEY', 'NOT', 'NULL',
   'DELETE', 'UPDATE', 'SET', 'DROP',
+  'INDEX', 'UNIQUE', 'ON',
+  'JOIN', 'INNER', 'GROUP', 'BY', 'HAVING', 'AS',
+  'COUNT', 'SUM', 'AVG', 'MIN', 'MAX',
+  'ORDER', 'ASC', 'DESC', 'LIMIT', 'OFFSET',
 ]);
 
 function createToken(type, value, position, line, column) {
@@ -197,6 +202,9 @@ function tokenize(sql) {
         break;
       case ',':
         tokens.push(createToken(TokenType.COMMA, ',', pos, line, column));
+        break;
+      case '.':
+        tokens.push(createToken(TokenType.DOT, '.', pos, line, column));
         break;
       case ';':
         tokens.push(createToken(TokenType.SEMICOLON, ';', pos, line, column));

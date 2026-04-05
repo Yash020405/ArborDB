@@ -1,20 +1,49 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const request = require('supertest');
 const { createApp } = require('../src/app');
 const engine = require('../src/engine');
 const metricsService = require('../src/services/metrics');
 
 let app;
+let tempDataDir;
+
+const previousDataDir = process.env.DATA_DIR;
+const previousRateLimitMaxRequests = process.env.RATE_LIMIT_MAX_REQUESTS;
 
 beforeAll(() => {
-  process.env.USE_MOCK_ENGINE = 'true';
+  tempDataDir = path.resolve(__dirname, `../.tmp/error-${Date.now()}`);
+
+  process.env.DATA_DIR = tempDataDir;
+  process.env.RATE_LIMIT_MAX_REQUESTS = '1000';
+
   app = createApp();
 });
 
 beforeEach(() => {
+  fs.rmSync(tempDataDir, { recursive: true, force: true });
+  fs.mkdirSync(path.join(tempDataDir, 'tables'), { recursive: true });
+
   engine.reset();
   metricsService.reset();
+});
+
+afterAll(() => {
+  fs.rmSync(tempDataDir, { recursive: true, force: true });
+
+  if (previousDataDir === undefined) {
+    delete process.env.DATA_DIR;
+  } else {
+    process.env.DATA_DIR = previousDataDir;
+  }
+
+  if (previousRateLimitMaxRequests === undefined) {
+    delete process.env.RATE_LIMIT_MAX_REQUESTS;
+  } else {
+    process.env.RATE_LIMIT_MAX_REQUESTS = previousRateLimitMaxRequests;
+  }
 });
 
 describe('Error Handling', () => {
@@ -25,7 +54,7 @@ describe('Error Handling', () => {
         .send({ sql: '' });
 
       expect(res.status).toBe(400);
-      expect(res.body.error.code).toBe('PARSE_ERROR');
+      expect(res.body.error.code).toBe('QUERY_VALIDATION_ERROR');
     });
 
     test('returns parse error for invalid SQL syntax', async () => {
@@ -34,7 +63,7 @@ describe('Error Handling', () => {
         .send({ sql: 'INVALID SQL QUERY' });
 
       expect(res.status).toBe(400);
-      expect(res.body.error.code).toBe('PARSE_ERROR');
+      expect(res.body.error.code).toBe('QUERY_PARSE_ERROR');
     });
 
     test('returns parse error for incomplete CREATE', async () => {
@@ -43,7 +72,7 @@ describe('Error Handling', () => {
         .send({ sql: 'CREATE TABLE' });
 
       expect(res.status).toBe(400);
-      expect(res.body.error.code).toBe('PARSE_ERROR');
+      expect(res.body.error.code).toBe('QUERY_PARSE_ERROR');
     });
 
     test('returns parse error for missing body', async () => {
@@ -52,7 +81,7 @@ describe('Error Handling', () => {
         .send({});
 
       expect(res.status).toBe(400);
-      expect(res.body.error.code).toBe('PARSE_ERROR');
+      expect(res.body.error.code).toBe('QUERY_VALIDATION_ERROR');
     });
 
     test('returns parse error for incomplete INSERT', async () => {
@@ -61,7 +90,16 @@ describe('Error Handling', () => {
         .send({ sql: 'INSERT INTO users' });
 
       expect(res.status).toBe(400);
-      expect(res.body.error.code).toBe('PARSE_ERROR');
+      expect(res.body.error.code).toBe('QUERY_PARSE_ERROR');
+    });
+
+    test('returns tokenizer error for illegal character', async () => {
+      const res = await request(app)
+        .post('/query')
+        .send({ sql: 'SELECT * FROM users WHERE id = @1' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('QUERY_TOKENIZE_ERROR');
     });
 
     test('returns parse error for invalid content type', async () => {
@@ -84,7 +122,7 @@ describe('Error Handling', () => {
         .send({ sql: 'CREATE TABLE users (id INT)' });
 
       expect(res.status).toBe(502);
-      expect(res.body.error.code).toBe('ENGINE_ERROR');
+      expect(res.body.error.code).toBe('ENGINE_OPERATION_FAILED');
     });
 
     test('returns error for query on non-existent table', async () => {
@@ -93,7 +131,7 @@ describe('Error Handling', () => {
         .send({ sql: 'SELECT * FROM nonexistent' });
 
       expect(res.status).toBe(502);
-      expect(res.body.error.code).toBe('ENGINE_ERROR');
+      expect(res.body.error.code).toBe('ENGINE_OPERATION_FAILED');
     });
 
     test('returns error for insert with duplicate key', async () => {
@@ -109,7 +147,49 @@ describe('Error Handling', () => {
         .send({ sql: "INSERT INTO test VALUES (1, 'duplicate')" });
 
       expect(res.status).toBe(502);
-      expect(res.body.error.code).toBe('ENGINE_ERROR');
+      expect(res.body.error.code).toBe('ENGINE_OPERATION_FAILED');
+    });
+
+    test('returns error for duplicate index creation', async () => {
+      await request(app)
+        .post('/query')
+        .send({ sql: 'CREATE TABLE users (id INT PRIMARY KEY, name STRING)' });
+      await request(app)
+        .post('/query')
+        .send({ sql: 'CREATE INDEX idx_users_name ON users (name)' });
+
+      const res = await request(app)
+        .post('/query')
+        .send({ sql: 'CREATE INDEX idx_users_name ON users (name)' });
+
+      expect(res.status).toBe(502);
+      expect(res.body.error.code).toBe('ENGINE_OPERATION_FAILED');
+    });
+
+    test('returns error for dropping missing index', async () => {
+      await request(app)
+        .post('/query')
+        .send({ sql: 'CREATE TABLE users (id INT PRIMARY KEY, name STRING)' });
+
+      const res = await request(app)
+        .post('/query')
+        .send({ sql: 'DROP INDEX idx_missing ON users' });
+
+      expect(res.status).toBe(502);
+      expect(res.body.error.code).toBe('ENGINE_OPERATION_FAILED');
+    });
+
+    test('returns engine error for JOIN with missing table', async () => {
+      await request(app)
+        .post('/query')
+        .send({ sql: 'CREATE TABLE users (id INT PRIMARY KEY, name STRING)' });
+
+      const res = await request(app)
+        .post('/query')
+        .send({ sql: 'SELECT users.id FROM users JOIN orders ON users.id = orders.user_id' });
+
+      expect(res.status).toBe(502);
+      expect(res.body.error.code).toBe('ENGINE_OPERATION_FAILED');
     });
   });
 

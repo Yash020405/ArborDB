@@ -14,6 +14,7 @@ public:
     std::vector<int64_t> lookup(const std::string& columnValue) const;
     bool hasColumn(const std::string& columnName) const;
     void addColumn(const std::string& columnName);
+    void removeColumn(const std::string& columnName);
     std::vector<int64_t> lookupColumn(const std::string& columnName, const std::string& value) const;
     void insertForColumn(const std::string& columnName, const std::string& value, int64_t primaryKey);
 

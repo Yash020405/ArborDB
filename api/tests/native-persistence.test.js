@@ -12,13 +12,11 @@ runNativeSuite('Native Persistence', () => {
   let metricsService;
   let tempDataDir;
 
-  const previousUseMockEngine = process.env.USE_MOCK_ENGINE;
   const previousDataDir = process.env.DATA_DIR;
 
   beforeAll(() => {
     tempDataDir = path.resolve(__dirname, `../.tmp/native-${Date.now()}`);
 
-    process.env.USE_MOCK_ENGINE = 'false';
     process.env.DATA_DIR = tempDataDir;
 
     jest.resetModules();
@@ -35,12 +33,6 @@ runNativeSuite('Native Persistence', () => {
 
   afterAll(() => {
     fs.rmSync(tempDataDir, { recursive: true, force: true });
-
-    if (previousUseMockEngine === undefined) {
-      delete process.env.USE_MOCK_ENGINE;
-    } else {
-      process.env.USE_MOCK_ENGINE = previousUseMockEngine;
-    }
 
     if (previousDataDir === undefined) {
       delete process.env.DATA_DIR;
@@ -102,5 +94,37 @@ runNativeSuite('Native Persistence', () => {
 
     const tablesRes = await request(app).get('/tables').expect(200);
     expect(tablesRes.body.tables.some((t) => t.name === 'native_cleanup')).toBe(false);
+  });
+
+  test('persists secondary index definitions and updates them after drop', async () => {
+    await request(app)
+      .post('/query')
+      .send({ sql: 'CREATE TABLE native_idx (id INT PRIMARY KEY, email STRING, age INT)' })
+      .expect(200);
+
+    await request(app)
+      .post('/query')
+      .send({ sql: 'CREATE UNIQUE INDEX idx_native_idx_email ON native_idx (email)' })
+      .expect(200);
+
+    const schemaPath = path.join(tempDataDir, 'tables', 'native_idx.schema.json');
+    const schemaAfterCreate = JSON.parse(fs.readFileSync(schemaPath, 'utf8'));
+
+    expect(Array.isArray(schemaAfterCreate.secondary_indexes)).toBe(true);
+    expect(schemaAfterCreate.secondary_indexes).toHaveLength(1);
+    expect(schemaAfterCreate.secondary_indexes[0]).toMatchObject({
+      name: 'idx_native_idx_email',
+      column: 'email',
+      unique: true,
+    });
+
+    await request(app)
+      .post('/query')
+      .send({ sql: 'DROP INDEX idx_native_idx_email ON native_idx' })
+      .expect(200);
+
+    const schemaAfterDrop = JSON.parse(fs.readFileSync(schemaPath, 'utf8'));
+    expect(Array.isArray(schemaAfterDrop.secondary_indexes)).toBe(true);
+    expect(schemaAfterDrop.secondary_indexes).toHaveLength(0);
   });
 });

@@ -1,20 +1,49 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const request = require('supertest');
 const { createApp } = require('../src/app');
 const engine = require('../src/engine');
 const metricsService = require('../src/services/metrics');
 
 let app;
+let tempDataDir;
+
+const previousDataDir = process.env.DATA_DIR;
+const previousRateLimitMaxRequests = process.env.RATE_LIMIT_MAX_REQUESTS;
 
 beforeAll(() => {
-  process.env.USE_MOCK_ENGINE = 'true';
+  tempDataDir = path.resolve(__dirname, `../.tmp/api-${Date.now()}`);
+
+  process.env.DATA_DIR = tempDataDir;
+  process.env.RATE_LIMIT_MAX_REQUESTS = '1000';
+
   app = createApp();
 });
 
 beforeEach(() => {
+  fs.rmSync(tempDataDir, { recursive: true, force: true });
+  fs.mkdirSync(path.join(tempDataDir, 'tables'), { recursive: true });
+
   engine.reset();
   metricsService.reset();
+});
+
+afterAll(() => {
+  fs.rmSync(tempDataDir, { recursive: true, force: true });
+
+  if (previousDataDir === undefined) {
+    delete process.env.DATA_DIR;
+  } else {
+    process.env.DATA_DIR = previousDataDir;
+  }
+
+  if (previousRateLimitMaxRequests === undefined) {
+    delete process.env.RATE_LIMIT_MAX_REQUESTS;
+  } else {
+    process.env.RATE_LIMIT_MAX_REQUESTS = previousRateLimitMaxRequests;
+  }
 });
 
 describe('API Endpoints', () => {
@@ -204,7 +233,201 @@ describe('API Endpoints', () => {
         .send({ sql: 'SELECT * FROM tmp' });
 
       expect(afterDrop.status).toBe(502);
-      expect(afterDrop.body.error.code).toBe('ENGINE_ERROR');
+      expect(afterDrop.body.error.code).toBe('ENGINE_OPERATION_FAILED');
+    });
+
+    test('executes CREATE INDEX and uses indexed lookup for non-primary key equality', async () => {
+      await request(app)
+        .post('/query')
+        .send({ sql: 'CREATE TABLE users (id INT PRIMARY KEY, name STRING)' });
+      await request(app)
+        .post('/query')
+        .send({ sql: "INSERT INTO users VALUES (1, 'Yash')" });
+      await request(app)
+        .post('/query')
+        .send({ sql: "INSERT INTO users VALUES (2, 'Raj')" });
+
+      const createIndexRes = await request(app)
+        .post('/query')
+        .send({ sql: 'CREATE INDEX idx_users_name ON users (name)' });
+
+      expect(createIndexRes.status).toBe(200);
+      expect(createIndexRes.body.query.type).toBe('CREATE_INDEX');
+
+      const indexedSelectRes = await request(app)
+        .post('/query')
+        .send({ sql: "SELECT * FROM users WHERE name = 'Yash'" });
+
+      expect(indexedSelectRes.status).toBe(200);
+      expect(indexedSelectRes.body.result.rowCount).toBe(1);
+      expect(indexedSelectRes.body.result.rows[0].id).toBe(1);
+      expect(indexedSelectRes.body.optimization.strategy).toBe('secondary_index_lookup');
+    });
+
+    test('executes DROP INDEX and falls back to full scan filter strategy', async () => {
+      await request(app)
+        .post('/query')
+        .send({ sql: 'CREATE TABLE users (id INT PRIMARY KEY, name STRING)' });
+      await request(app)
+        .post('/query')
+        .send({ sql: "INSERT INTO users VALUES (1, 'Yash')" });
+      await request(app)
+        .post('/query')
+        .send({ sql: "INSERT INTO users VALUES (2, 'Raj')" });
+      await request(app)
+        .post('/query')
+        .send({ sql: 'CREATE INDEX idx_users_name ON users (name)' });
+
+      const dropIndexRes = await request(app)
+        .post('/query')
+        .send({ sql: 'DROP INDEX idx_users_name ON users' });
+
+      expect(dropIndexRes.status).toBe(200);
+      expect(dropIndexRes.body.query.type).toBe('DROP_INDEX');
+
+      const postDropSelectRes = await request(app)
+        .post('/query')
+        .send({ sql: "SELECT * FROM users WHERE name = 'Yash'" });
+
+      expect(postDropSelectRes.status).toBe(200);
+      expect(postDropSelectRes.body.result.rowCount).toBe(1);
+      expect(postDropSelectRes.body.optimization.strategy).toBe('full_scan_filter');
+    });
+
+    test('executes INNER JOIN query', async () => {
+      await request(app)
+        .post('/query')
+        .send({ sql: 'CREATE TABLE users (id INT PRIMARY KEY, name STRING)' });
+      await request(app)
+        .post('/query')
+        .send({ sql: 'CREATE TABLE orders (id INT PRIMARY KEY, user_id INT, amount FLOAT)' });
+
+      await request(app)
+        .post('/query')
+        .send({ sql: "INSERT INTO users VALUES (1, 'Alice')" });
+      await request(app)
+        .post('/query')
+        .send({ sql: "INSERT INTO users VALUES (2, 'Bob')" });
+
+      await request(app)
+        .post('/query')
+        .send({ sql: 'INSERT INTO orders VALUES (100, 1, 20.5)' });
+      await request(app)
+        .post('/query')
+        .send({ sql: 'INSERT INTO orders VALUES (101, 1, 30.0)' });
+      await request(app)
+        .post('/query')
+        .send({ sql: 'INSERT INTO orders VALUES (102, 2, 10.0)' });
+
+      const res = await request(app)
+        .post('/query')
+        .send({ sql: 'SELECT users.id, users.name, orders.amount FROM users JOIN orders ON users.id = orders.user_id WHERE users.id = 1' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.optimization.strategy).toBe('advanced_select');
+      expect(res.body.result.rowCount).toBe(2);
+      expect(res.body.result.rows[0].id).toBe(1);
+      expect(res.body.result.rows[0].name).toBe('Alice');
+    });
+
+    test('executes GROUP BY aggregate query with HAVING', async () => {
+      await request(app)
+        .post('/query')
+        .send({ sql: 'CREATE TABLE orders (id INT PRIMARY KEY, user_id INT, amount FLOAT)' });
+
+      await request(app)
+        .post('/query')
+        .send({ sql: 'INSERT INTO orders VALUES (100, 1, 20.5)' });
+      await request(app)
+        .post('/query')
+        .send({ sql: 'INSERT INTO orders VALUES (101, 1, 30.0)' });
+      await request(app)
+        .post('/query')
+        .send({ sql: 'INSERT INTO orders VALUES (102, 2, 10.0)' });
+
+      const res = await request(app)
+        .post('/query')
+        .send({
+          sql: 'SELECT user_id, COUNT(*) AS orders_count, SUM(amount) AS total_amount FROM orders GROUP BY user_id HAVING orders_count = 2',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.optimization.strategy).toBe('advanced_select');
+      expect(res.body.result.rowCount).toBe(1);
+      expect(res.body.result.rows[0].user_id).toBe(1);
+      expect(res.body.result.rows[0].orders_count).toBe(2);
+      expect(res.body.result.rows[0].total_amount).toBeCloseTo(50.5, 5);
+    });
+
+    test('executes ORDER BY with LIMIT/OFFSET', async () => {
+      await request(app)
+        .post('/query')
+        .send({ sql: 'CREATE TABLE sort_test (id INT PRIMARY KEY, name STRING)' });
+
+      await request(app).post('/query').send({ sql: "INSERT INTO sort_test VALUES (1, 'a')" });
+      await request(app).post('/query').send({ sql: "INSERT INTO sort_test VALUES (2, 'b')" });
+      await request(app).post('/query').send({ sql: "INSERT INTO sort_test VALUES (3, 'c')" });
+      await request(app).post('/query').send({ sql: "INSERT INTO sort_test VALUES (4, 'd')" });
+
+      const res = await request(app)
+        .post('/query')
+        .send({ sql: 'SELECT id, name FROM sort_test ORDER BY id DESC LIMIT 2 OFFSET 1' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.optimization.strategy).toBe('advanced_select');
+      expect(res.body.result.rowCount).toBe(2);
+      expect(res.body.result.rows.map((r) => r.id)).toEqual([3, 2]);
+    });
+
+    test('executes aggregate ORDER BY alias', async () => {
+      await request(app)
+        .post('/query')
+        .send({ sql: 'CREATE TABLE orders_rank (id INT PRIMARY KEY, user_id INT, amount FLOAT)' });
+
+      await request(app).post('/query').send({ sql: 'INSERT INTO orders_rank VALUES (1, 1, 10)' });
+      await request(app).post('/query').send({ sql: 'INSERT INTO orders_rank VALUES (2, 1, 15)' });
+      await request(app).post('/query').send({ sql: 'INSERT INTO orders_rank VALUES (3, 2, 5)' });
+
+      const res = await request(app)
+        .post('/query')
+        .send({
+          sql: 'SELECT user_id, SUM(amount) AS total_amount FROM orders_rank GROUP BY user_id ORDER BY total_amount DESC',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.result.rowCount).toBe(2);
+      expect(res.body.result.rows[0].user_id).toBe(1);
+      expect(res.body.result.rows[0].total_amount).toBeCloseTo(25, 5);
+    });
+
+    test('keeps low traversal for ORDER BY on primary-key filtered query', async () => {
+      await request(app)
+        .post('/query')
+        .send({ sql: 'CREATE TABLE latency_test (id INT PRIMARY KEY, name STRING)' });
+
+      for (let i = 1; i <= 10; i++) {
+        await request(app)
+          .post('/query')
+          .send({ sql: `INSERT INTO latency_test VALUES (${i}, 'user_${i}')` });
+      }
+
+      const plainRes = await request(app)
+        .post('/query')
+        .send({ sql: 'SELECT * FROM latency_test WHERE id = 5' })
+        .expect(200);
+
+      const orderedRes = await request(app)
+        .post('/query')
+        .send({ sql: 'SELECT * FROM latency_test WHERE id = 5 ORDER BY id DESC LIMIT 1' })
+        .expect(200);
+
+      expect(orderedRes.body.result.rowCount).toBe(1);
+      expect(orderedRes.body.result.rows[0].id).toBe(5);
+
+      // ORDER BY path should preserve indexed lookup behavior via pushdown.
+      expect(orderedRes.body.metrics.nodes_traversed).toBeLessThanOrEqual(
+        plainRes.body.metrics.nodes_traversed + 1,
+      );
     });
   });
 
@@ -274,7 +497,7 @@ describe('API Endpoints', () => {
 
     test('includes engine info', async () => {
       const res = await request(app).get('/metrics');
-      expect(res.body.engine.type).toBe('mock');
+      expect(res.body.engine.type).toBe('native');
     });
   });
 

@@ -1,7 +1,7 @@
 'use strict';
 
 // SQL parser — recursive-descent parser that consumes tokens and produces an AST.
-// Supports CREATE TABLE, INSERT INTO, SELECT with WHERE (=, BETWEEN).
+// Supports table/index DDL, DML, joins, and aggregate/group-by query forms.
 
 const { TokenType } = require('./tokenizer');
 
@@ -67,7 +67,7 @@ class Parser {
     let ast;
 
     if (this.checkKeyword('CREATE')) {
-      ast = this.parseCreateTable();
+      ast = this.parseCreate();
     } else if (this.checkKeyword('INSERT')) {
       ast = this.parseInsert();
     } else if (this.checkKeyword('SELECT')) {
@@ -77,7 +77,7 @@ class Parser {
     } else if (this.checkKeyword('DELETE')) {
       ast = this.parseDelete();
     } else if (this.checkKeyword('DROP')) {
-      ast = this.parseDropTable();
+      ast = this.parseDrop();
     } else {
       throw this._error(
         `Unexpected token '${token.value}'. Expected CREATE, INSERT, SELECT, UPDATE, DELETE, or DROP`,
@@ -97,9 +97,32 @@ class Parser {
     return ast;
   }
 
-  // CREATE TABLE name (col1 TYPE, col2 TYPE, ...)
-  parseCreateTable() {
+  // CREATE TABLE ... | CREATE [UNIQUE] INDEX ...
+  parseCreate() {
     this.expect(TokenType.KEYWORD, 'CREATE');
+
+    let unique = false;
+    if (this.checkKeyword('UNIQUE')) {
+      this.advance();
+      unique = true;
+    }
+
+    if (this.checkKeyword('TABLE')) {
+      if (unique) {
+        throw this._error("UNIQUE is only supported for CREATE INDEX", this.peek());
+      }
+      return this.parseCreateTableAfterCreate();
+    }
+
+    if (this.checkKeyword('INDEX')) {
+      return this.parseCreateIndexAfterCreate(unique);
+    }
+
+    throw this._error("Expected 'TABLE' or 'INDEX' after CREATE", this.peek());
+  }
+
+  // CREATE TABLE name (col1 TYPE, col2 TYPE, ...)
+  parseCreateTableAfterCreate() {
     this.expect(TokenType.KEYWORD, 'TABLE');
 
     const tableToken = this.expect(TokenType.IDENTIFIER);
@@ -152,6 +175,25 @@ class Parser {
     return { type: 'CREATE_TABLE', table: tableName, columns, primaryKey };
   }
 
+  // CREATE [UNIQUE] INDEX index_name ON table_name (column_name)
+  parseCreateIndexAfterCreate(unique) {
+    this.expect(TokenType.KEYWORD, 'INDEX');
+    const indexName = this.expect(TokenType.IDENTIFIER).value;
+    this.expect(TokenType.KEYWORD, 'ON');
+    const tableName = this.expect(TokenType.IDENTIFIER).value;
+    this.expect(TokenType.LPAREN);
+    const column = this.expect(TokenType.IDENTIFIER).value;
+    this.expect(TokenType.RPAREN);
+
+    return {
+      type: 'CREATE_INDEX',
+      table: tableName,
+      indexName,
+      column,
+      unique,
+    };
+  }
+
   // INSERT INTO name VALUES (val1, val2, ...)
   // INSERT INTO name (col1, col2) VALUES (val1, val2)
   parseInsert() {
@@ -188,7 +230,7 @@ class Parser {
     return ast;
   }
 
-  // SELECT * | col1, col2 FROM name [WHERE condition]
+  // SELECT * | expressions FROM table [JOIN ...] [WHERE ...] [GROUP BY ...] [HAVING ...] [ORDER BY ...] [LIMIT ... [OFFSET ...]]
   parseSelect() {
     this.expect(TokenType.KEYWORD, 'SELECT');
 
@@ -199,21 +241,174 @@ class Parser {
     } else {
       columns = [];
       do {
-        columns.push(this.expect(TokenType.IDENTIFIER).value);
+        columns.push(this.parseSelectExpression());
       } while (this.check(TokenType.COMMA) && this.advance());
     }
 
     this.expect(TokenType.KEYWORD, 'FROM');
-    const tableName = this.expect(TokenType.IDENTIFIER).value;
+    const from = this.parseTableRef();
+    const tableName = from.table;
 
     const ast = { type: 'SELECT', table: tableName, columns };
+    if (from.alias) {
+      ast.fromAlias = from.alias;
+    }
+
+    const joins = [];
+    while (this.checkKeyword('INNER') || this.checkKeyword('JOIN')) {
+      if (this.checkKeyword('INNER')) {
+        this.advance();
+      }
+
+      this.expect(TokenType.KEYWORD, 'JOIN');
+      const joinRef = this.parseTableRef();
+      this.expect(TokenType.KEYWORD, 'ON');
+
+      const left = this.parseIdentifierPath();
+      this.expect(TokenType.EQUALS);
+      const right = this.parseIdentifierPath();
+
+      joins.push({
+        type: 'INNER',
+        table: joinRef.table,
+        alias: joinRef.alias || null,
+        on: { left, right },
+      });
+    }
+
+    if (joins.length > 0) {
+      ast.joins = joins;
+    }
 
     if (this.checkKeyword('WHERE')) {
       this.advance();
       ast.condition = this.parseCondition();
     }
 
+    if (this.checkKeyword('GROUP')) {
+      this.advance();
+      this.expect(TokenType.KEYWORD, 'BY');
+
+      ast.groupBy = [];
+      do {
+        ast.groupBy.push(this.parseIdentifierPath());
+      } while (this.check(TokenType.COMMA) && this.advance());
+    }
+
+    if (this.checkKeyword('HAVING')) {
+      this.advance();
+      ast.having = this.parseCondition();
+    }
+
+    if (this.checkKeyword('ORDER')) {
+      this.advance();
+      this.expect(TokenType.KEYWORD, 'BY');
+
+      ast.orderBy = [];
+      do {
+        const column = this.parseIdentifierPath();
+        let direction = 'ASC';
+
+        if (this.checkKeyword('ASC')) {
+          this.advance();
+          direction = 'ASC';
+        } else if (this.checkKeyword('DESC')) {
+          this.advance();
+          direction = 'DESC';
+        }
+
+        ast.orderBy.push({ column, direction });
+      } while (this.check(TokenType.COMMA) && this.advance());
+    }
+
+    if (this.checkKeyword('LIMIT')) {
+      this.advance();
+      ast.limit = this.parsePositiveInteger('LIMIT');
+
+      if (this.checkKeyword('OFFSET')) {
+        this.advance();
+        ast.offset = this.parsePositiveInteger('OFFSET');
+      }
+    }
+
     return ast;
+  }
+
+  parsePositiveInteger(keyword) {
+    const token = this.expect(TokenType.NUMBER);
+    if (!Number.isInteger(token.value) || token.value < 0) {
+      throw this._error(`${keyword} expects a non-negative integer`, token);
+    }
+    return token.value;
+  }
+
+  parseTableRef() {
+    const table = this.expect(TokenType.IDENTIFIER).value;
+    let alias = null;
+
+    if (this.check(TokenType.IDENTIFIER)) {
+      alias = this.advance().value;
+    }
+
+    return { table, alias };
+  }
+
+  parseSelectExpression() {
+    if (this.checkKeyword('COUNT') || this.checkKeyword('SUM') || this.checkKeyword('AVG') || this.checkKeyword('MIN') || this.checkKeyword('MAX')) {
+      const func = this.advance().value;
+      this.expect(TokenType.LPAREN);
+
+      let column;
+      if (this.check(TokenType.STAR)) {
+        this.advance();
+        column = '*';
+      } else {
+        column = this.parseIdentifierPath();
+      }
+
+      this.expect(TokenType.RPAREN);
+
+      let alias = null;
+      if (this.checkKeyword('AS')) {
+        this.advance();
+        alias = this.expect(TokenType.IDENTIFIER).value;
+      } else if (this.check(TokenType.IDENTIFIER)) {
+        alias = this.advance().value;
+      }
+
+      return {
+        type: 'AGGREGATE',
+        func,
+        column,
+        alias,
+      };
+    }
+
+    const column = this.parseIdentifierPath();
+
+    if (this.checkKeyword('AS')) {
+      this.advance();
+      const alias = this.expect(TokenType.IDENTIFIER).value;
+      return { type: 'COLUMN', name: column, alias };
+    }
+
+    if (this.check(TokenType.IDENTIFIER)) {
+      const alias = this.advance().value;
+      return { type: 'COLUMN', name: column, alias };
+    }
+
+    return column;
+  }
+
+  parseIdentifierPath() {
+    let name = this.expect(TokenType.IDENTIFIER).value;
+
+    while (this.check(TokenType.DOT)) {
+      this.advance();
+      name += `.${this.expect(TokenType.IDENTIFIER).value}`;
+    }
+
+    return name;
   }
 
   // UPDATE table SET col = val [WHERE condition]
@@ -252,18 +447,44 @@ class Parser {
     return ast;
   }
 
-  // DROP TABLE table
-  parseDropTable() {
+  // DROP TABLE table | DROP INDEX index_name ON table
+  parseDrop() {
     this.expect(TokenType.KEYWORD, 'DROP');
+
+    if (this.checkKeyword('TABLE')) {
+      return this.parseDropTableAfterDrop();
+    }
+
+    if (this.checkKeyword('INDEX')) {
+      return this.parseDropIndexAfterDrop();
+    }
+
+    throw this._error("Expected 'TABLE' or 'INDEX' after DROP", this.peek());
+  }
+
+  parseDropTableAfterDrop() {
     this.expect(TokenType.KEYWORD, 'TABLE');
     const tableName = this.expect(TokenType.IDENTIFIER).value;
 
     return { type: 'DROP_TABLE', table: tableName };
   }
 
+  parseDropIndexAfterDrop() {
+    this.expect(TokenType.KEYWORD, 'INDEX');
+    const indexName = this.expect(TokenType.IDENTIFIER).value;
+    this.expect(TokenType.KEYWORD, 'ON');
+    const tableName = this.expect(TokenType.IDENTIFIER).value;
+
+    return {
+      type: 'DROP_INDEX',
+      table: tableName,
+      indexName,
+    };
+  }
+
   // WHERE col = value  |  WHERE col BETWEEN val1 AND val2
   parseCondition() {
-    const column = this.expect(TokenType.IDENTIFIER).value;
+    const column = this.parseIdentifierPath();
 
     if (this.check(TokenType.EQUALS)) {
       this.advance();

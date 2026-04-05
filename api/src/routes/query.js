@@ -4,10 +4,19 @@
 
 const express = require('express');
 const Joi = require('joi');
-const { processQuery } = require('../../../engine/src/query');
+const { tokenize, parseTokens, optimize, buildEngineCommand } = require('../../../engine/src/query');
+const { executeAdvancedSelect } = require('../../../engine/src/query/advanced');
 const engine = require('../engine');
 const metricsService = require('../services/metrics');
-const { ParseError } = require('../errors');
+const {
+  ArborDBError,
+  QueryValidationError,
+  QueryTokenizeError,
+  QueryParseError,
+  QueryPlanError,
+  QueryExecutionError,
+  EngineError,
+} = require('../errors');
 
 const router = express.Router();
 
@@ -21,42 +30,90 @@ const querySchema = Joi.object({
     }),
 });
 
+const SQL_PREVIEW_LIMIT = 240;
+
+function buildSqlDetails(sql, extra = {}) {
+  if (typeof sql !== 'string') {
+    return extra;
+  }
+
+  return {
+    sqlPreview: sql.length > SQL_PREVIEW_LIMIT ? `${sql.slice(0, SQL_PREVIEW_LIMIT)}...` : sql,
+    ...extra,
+  };
+}
+
 router.post('/', async (req, res, next) => {
   const totalStart = Date.now();
+  let sqlForMetrics = null;
+  let astForMetrics = null;
 
   try {
     const { error, value } = querySchema.validate(req.body);
     if (error) {
-      throw new ParseError('Invalid request', { details: error.details.map(d => d.message) });
+      throw new QueryValidationError('Invalid query payload', {
+        details: error.details.map((d) => d.message),
+      });
     }
 
     const { sql } = value;
+    sqlForMetrics = sql;
+    const schemaMap = engine.getSchemaMap();
 
-    // Parse, optimize, and build engine command
+    // Parse and plan in explicit stages to keep error taxonomy stable.
     const parseStart = Date.now();
-    let queryResult;
+    let tokens;
+
     try {
-      const schemaMap = engine.getSchemaMap();
-      queryResult = processQuery(sql, schemaMap);
+      tokens = tokenize(sql);
     } catch (err) {
-      throw new ParseError(err.message, { sql });
+      throw new QueryTokenizeError(err.message, buildSqlDetails(sql, { stage: 'tokenize' }));
+    }
+
+    let ast;
+    try {
+      ast = parseTokens(tokens);
+      astForMetrics = ast;
+    } catch (err) {
+      throw new QueryParseError(err.message, buildSqlDetails(sql, { stage: 'parse' }));
+    }
+
+    let optimized;
+    let command;
+    try {
+      const tableMetadata = schemaMap[ast.table] ? {
+        primaryKey: schemaMap[ast.table].primaryKey,
+        secondaryIndexes: schemaMap[ast.table].secondaryIndexes || schemaMap[ast.table].secondaryIndexDefs || [],
+      } : null;
+
+      optimized = optimize(ast, tableMetadata);
+      command = buildEngineCommand(ast, schemaMap);
+    } catch (err) {
+      throw new QueryPlanError(err.message, buildSqlDetails(sql, {
+        stage: 'plan',
+        queryType: ast.type,
+      }));
     }
     const parseTimeMs = Date.now() - parseStart;
-
-    const { ast, optimized, command } = queryResult;
 
     // Execute via engine
     const engineStart = Date.now();
     let engineResponse;
     try {
-      engineResponse = await engine.callEngine(command);
+      if (command.operation === 'select_advanced') {
+        engineResponse = await executeAdvancedSelect(ast, (cmd) => engine.callEngine(cmd), schemaMap);
+      } else {
+        engineResponse = await engine.callEngine(command);
+      }
     } catch (err) {
-      metricsService.recordQuery({
-        sql, type: ast.type, table: ast.table,
-        executionTimeMs: Date.now() - totalStart, rowsReturned: 0,
-        status: 'error', error: err.message,
-      });
-      throw err;
+      if (err instanceof EngineError) {
+        throw err;
+      }
+
+      throw new QueryExecutionError(err.message, buildSqlDetails(sql, {
+        stage: 'execute',
+        queryType: ast.type,
+      }));
     }
     const engineTimeMs = Date.now() - engineStart;
     const totalTimeMs = Date.now() - totalStart;
@@ -87,7 +144,23 @@ router.post('/', async (req, res, next) => {
 
     res.json(response);
   } catch (err) {
-    next(err);
+    if (typeof sqlForMetrics === 'string') {
+      metricsService.recordQuery({
+        sql: sqlForMetrics,
+        type: astForMetrics ? astForMetrics.type : 'UNKNOWN',
+        table: astForMetrics ? astForMetrics.table : null,
+        executionTimeMs: Date.now() - totalStart,
+        rowsReturned: 0,
+        status: 'error',
+        error: err.errorCode || err.message,
+      });
+    }
+
+    if (err instanceof ArborDBError) {
+      return next(err);
+    }
+
+    return next(new QueryExecutionError(err.message));
   }
 });
 

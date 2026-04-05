@@ -1,22 +1,13 @@
 'use strict';
 
-// Engine factory — routes to mock or real engine based on USE_MOCK_ENGINE env var.
+// Native engine facade — metadata helpers + C++ engine command execution.
 
 const fs = require('fs');
 const path = require('path');
-const mock = require('./mock');
-const { callEngine: callRealEngine } = require('./caller');
-
-function useMockEngine() {
-  const useMock = process.env.USE_MOCK_ENGINE;
-  return useMock === undefined || useMock === 'true' || useMock === '1';
-}
+const { callEngine: callNativeEngine } = require('./caller');
 
 async function callEngine(engineJson) {
-  if (useMockEngine()) {
-    return mock.callEngine(engineJson);
-  }
-  return callRealEngine(engineJson);
+  return callNativeEngine(engineJson);
 }
 
 function getTablesDir() {
@@ -32,11 +23,35 @@ function getTablesDir() {
   return d;
 }
 
-function listTables() {
-  if (useMockEngine()) {
-    return mock.listTables();
+function normalizeSecondaryIndexDefs(tableName, schemaJson) {
+  if (!Array.isArray(schemaJson.secondary_indexes)) {
+    return [];
   }
 
+  const defs = [];
+  for (const idx of schemaJson.secondary_indexes) {
+    if (typeof idx === 'string') {
+      defs.push({
+        name: `idx_${tableName}_${idx}`,
+        column: idx,
+        unique: false,
+      });
+      continue;
+    }
+
+    if (idx && typeof idx === 'object' && typeof idx.name === 'string' && typeof idx.column === 'string') {
+      defs.push({
+        name: idx.name,
+        column: idx.column,
+        unique: Boolean(idx.unique),
+      });
+    }
+  }
+
+  return defs;
+}
+
+function listTables() {
   const dir = getTablesDir();
   const files = fs.readdirSync(dir);
   const tableNames = files
@@ -49,10 +64,6 @@ function listTables() {
 }
 
 function getTableInfo(name) {
-  if (useMockEngine()) {
-    return mock.getTableInfo(name);
-  }
-
   const schemaPath = path.join(getTablesDir(), `${name}.schema.json`);
   if (!fs.existsSync(schemaPath)) {
     return null;
@@ -63,10 +74,8 @@ function getTableInfo(name) {
   const j = JSON.parse(fs.readFileSync(schemaPath, 'utf8'));
   const schemaObj = {};
   j.columns.forEach((c) => { schemaObj[c.name] = c.type; });
-
-  const secondaryIndexes = j.columns
-    .map((c) => c.name)
-    .filter((colName) => colName !== j.primary_key);
+  const secondaryIndexDefs = normalizeSecondaryIndexDefs(name, j);
+  const secondaryIndexes = secondaryIndexDefs.map((idx) => idx.column);
 
   let rowCount = 0;
   // Keep a numeric rowCount in native mode so /metrics aggregation and frontend cards stay consistent.
@@ -81,16 +90,13 @@ function getTableInfo(name) {
     columns: j.columns,
     primaryKey: j.primary_key,
     secondaryIndexes,
+    secondaryIndexDefs,
     rowCount,
     createdAt: fs.statSync(schemaPath).mtime,
   };
 }
 
 function getSchemaMap() {
-  if (useMockEngine()) {
-    return mock.getSchemaMap();
-  }
-
   const map = {};
   const tables = listTables();
 
@@ -103,6 +109,7 @@ function getSchemaMap() {
       })),
       primaryKey: table.primaryKey,
       secondaryIndexes: table.secondaryIndexes || [],
+      secondaryIndexDefs: table.secondaryIndexDefs || [],
     };
   }
 
@@ -110,9 +117,19 @@ function getSchemaMap() {
 }
 
 function reset() {
-  if (useMockEngine()) {
-    mock.reset();
+  // Reset should only clear data automatically while running tests.
+  if (process.env.NODE_ENV !== 'test') {
+    return;
+  }
+
+  const dir = getTablesDir();
+  const files = fs.readdirSync(dir);
+
+  for (const file of files) {
+    if (file.endsWith('.schema.json') || file.endsWith('.db') || file === 'wal.log') {
+      fs.rmSync(path.join(dir, file), { force: true });
+    }
   }
 }
 
-module.exports = { callEngine, listTables, getTableInfo, getSchemaMap, reset, useMockEngine };
+module.exports = { callEngine, listTables, getTableInfo, getSchemaMap, reset };

@@ -1,6 +1,8 @@
 #include "table_store.h"
+#include <algorithm>
 #include <filesystem>
 #include <stdexcept>
+#include <unordered_set>
 
 namespace arbor {
 
@@ -134,11 +136,42 @@ SecondaryIndex& TableStore::getOrCreateIndex(const std::string& tableName, const
     if (it != secondaryIndexes_.end()) return it->second;
 
     SecondaryIndex idx;
-    for (const auto& col : schema.columns) {
-        if (col.name != schema.primaryKey) idx.addColumn(col.name);
+    for (const auto& def : schema.secondaryIndexes) {
+        idx.addColumn(def.column);
     }
     secondaryIndexes_[tableName] = std::move(idx);
     return secondaryIndexes_[tableName];
+}
+
+void TableStore::rebuildSecondaryIndexCache(
+    const std::string& tableName,
+    const TableSchema& schema,
+    const std::vector<nlohmann::json>& rows)
+{
+    secondaryIndexes_.erase(tableName);
+    SecondaryIndex& idx = getOrCreateIndex(tableName, schema);
+
+    for (const auto& row : rows) {
+        if (!row.contains(schema.primaryKey)) {
+            continue;
+        }
+
+        const int64_t pk = row[schema.primaryKey].get<int64_t>();
+        for (const auto& def : schema.secondaryIndexes) {
+            if (!row.contains(def.column)) {
+                continue;
+            }
+
+            const std::string value = columnValueToString(row[def.column]);
+            if (def.unique && !idx.lookupColumn(def.column, value).empty()) {
+                throw std::runtime_error(
+                    "Unique index '" + def.name + "' violation on value '" + value + "'"
+                );
+            }
+
+            idx.insertForColumn(def.column, value, pk);
+        }
+    }
 }
 
 void TableStore::persistTree(const std::string& tableName) {
@@ -150,8 +183,8 @@ void TableStore::persistTree(const std::string& tableName) {
 
 void TableStore::rebuildTable(const std::string& tableName, const TableSchema& schema, const std::vector<nlohmann::json>& rows) {
     trees_[tableName] = std::make_unique<BTree>();
-    secondaryIndexes_.erase(tableName);
-    SecondaryIndex& idx = getOrCreateIndex(tableName, schema);
+    rebuildSecondaryIndexCache(tableName, schema, {});
+    SecondaryIndex& idx = secondaryIndexes_[tableName];
 
     for (const auto& row : rows) {
         validateRow(schema, row);
@@ -163,9 +196,15 @@ void TableStore::rebuildTable(const std::string& tableName, const TableSchema& s
         int64_t key = row[schema.primaryKey].get<int64_t>();
         trees_[tableName]->insert(key, row);
 
-        for (const auto& col : schema.columns) {
-            if (col.name != schema.primaryKey && row.contains(col.name)) {
-                idx.insertForColumn(col.name, columnValueToString(row[col.name]), key);
+        for (const auto& def : schema.secondaryIndexes) {
+            if (row.contains(def.column)) {
+                const std::string value = columnValueToString(row[def.column]);
+                if (def.unique && !idx.lookupColumn(def.column, value).empty()) {
+                    throw std::runtime_error(
+                        "Unique index '" + def.name + "' violation on value '" + value + "'"
+                    );
+                }
+                idx.insertForColumn(def.column, value, key);
             }
         }
     }
@@ -218,13 +257,32 @@ Metrics TableStore::insert(const std::string& tableName, int64_t key, const nloh
     BTree* tree = getOrLoadTree(tableName);
     TableSchema schema = schemaManager_.loadTable(tableName);
     validateRow(schema, row);
+
+    if (!secondaryIndexes_.count(tableName) && !schema.secondaryIndexes.empty()) {
+        auto existingRows = tree->fullScan();
+        rebuildSecondaryIndexCache(tableName, schema, existingRows);
+    }
+
+    SecondaryIndex& idx = getOrCreateIndex(tableName, schema);
+    for (const auto& def : schema.secondaryIndexes) {
+        if (!def.unique || !row.contains(def.column)) {
+            continue;
+        }
+
+        const std::string value = columnValueToString(row[def.column]);
+        if (!idx.lookupColumn(def.column, value).empty()) {
+            throw std::runtime_error(
+                "Unique index '" + def.name + "' violation on value '" + value + "'"
+            );
+        }
+    }
+
     tree->resetMetrics();
     tree->insert(key, row);
 
-    SecondaryIndex& idx = getOrCreateIndex(tableName, schema);
-    for (const auto& col : schema.columns) {
-        if (col.name != schema.primaryKey && row.contains(col.name)) {
-            idx.insertForColumn(col.name, columnValueToString(row[col.name]), key);
+    for (const auto& def : schema.secondaryIndexes) {
+        if (row.contains(def.column)) {
+            idx.insertForColumn(def.column, columnValueToString(row[def.column]), key);
         }
     }
 
@@ -281,16 +339,8 @@ std::pair<std::vector<nlohmann::json>, Metrics> TableStore::searchByColumn(
     TableSchema schema = schemaManager_.loadTable(tableName);
 
     if (!secondaryIndexes_.count(tableName)) {
-        SecondaryIndex& idx = getOrCreateIndex(tableName, schema);
         auto existingRows = tree->fullScan();
-        for (const auto& row : existingRows) {
-            if (!row.contains(schema.primaryKey)) continue;
-            int64_t pk = row[schema.primaryKey].get<int64_t>();
-            for (const auto& col : schema.columns) {
-                if (col.name == schema.primaryKey || !row.contains(col.name)) continue;
-                idx.insertForColumn(col.name, columnValueToString(row[col.name]), pk);
-            }
-        }
+        rebuildSecondaryIndexCache(tableName, schema, existingRows);
     }
 
     SecondaryIndex& idx = secondaryIndexes_[tableName];
@@ -319,6 +369,93 @@ std::pair<std::vector<nlohmann::json>, Metrics> TableStore::searchByColumn(
 
     uint64_t traversals = tree->nodeTraversals();
     return {rows, {t.elapsedMs(), traversals, traversals, static_cast<uint64_t>(rows.size())}};
+}
+
+Metrics TableStore::createSecondaryIndex(
+    const std::string& tableName,
+    const std::string& indexName,
+    const std::string& column,
+    bool unique)
+{
+    Timer t;
+    BTree* tree = getOrLoadTree(tableName);
+    TableSchema schema = schemaManager_.loadTable(tableName);
+
+    if (column == schema.primaryKey) {
+        throw std::runtime_error("Primary key is already indexed: " + column);
+    }
+
+    bool columnExists = false;
+    for (const auto& col : schema.columns) {
+        if (col.name == column) {
+            columnExists = true;
+            break;
+        }
+    }
+    if (!columnExists) {
+        throw std::runtime_error("Unknown column for index: " + column);
+    }
+
+    for (const auto& def : schema.secondaryIndexes) {
+        if (def.name == indexName) {
+            throw std::runtime_error("Index already exists: " + indexName);
+        }
+        if (def.column == column) {
+            throw std::runtime_error("Column already indexed: " + column);
+        }
+    }
+
+    tree->resetMetrics();
+    auto rows = tree->fullScan();
+    uint64_t traversals = tree->nodeTraversals();
+
+    if (unique) {
+        std::unordered_set<std::string> seen;
+        for (const auto& row : rows) {
+            if (!row.contains(column)) {
+                continue;
+            }
+
+            const std::string value = columnValueToString(row[column]);
+            if (!seen.insert(value).second) {
+                throw std::runtime_error(
+                    "Cannot create unique index '" + indexName + "': duplicate value '" + value + "' exists"
+                );
+            }
+        }
+    }
+
+    schema.secondaryIndexes.push_back({indexName, column, unique});
+    schemaManager_.updateTable(schema);
+    rebuildSecondaryIndexCache(tableName, schema, rows);
+
+    return {t.elapsedMs(), traversals, traversals, static_cast<uint64_t>(rows.size())};
+}
+
+Metrics TableStore::dropSecondaryIndex(const std::string& tableName, const std::string& indexName) {
+    Timer t;
+    BTree* tree = getOrLoadTree(tableName);
+    TableSchema schema = schemaManager_.loadTable(tableName);
+
+    auto it = std::find_if(
+        schema.secondaryIndexes.begin(),
+        schema.secondaryIndexes.end(),
+        [&](const SecondaryIndexDef& def) { return def.name == indexName; }
+    );
+
+    if (it == schema.secondaryIndexes.end()) {
+        throw std::runtime_error("Index does not exist: " + indexName);
+    }
+
+    schema.secondaryIndexes.erase(it);
+    schemaManager_.updateTable(schema);
+
+    tree->resetMetrics();
+    auto rows = tree->fullScan();
+    uint64_t traversals = tree->nodeTraversals();
+    rebuildSecondaryIndexCache(tableName, schema, rows);
+
+    return {t.elapsedMs(), traversals, traversals, static_cast<uint64_t>(rows.size())};
 }
 
 std::pair<uint64_t, Metrics> TableStore::updateRows(

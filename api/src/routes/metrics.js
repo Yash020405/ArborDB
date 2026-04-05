@@ -16,7 +16,7 @@ router.get('/', (req, res) => {
     status: 'ok',
     metrics,
     engine: {
-      type: engine.useMockEngine() ? 'mock' : 'native',
+      type: 'native',
       tablesCount: tables.length,
       totalRows: tables.reduce((sum, t) => sum + (t.rowCount || 0), 0),
     },

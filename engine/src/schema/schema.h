@@ -14,10 +14,17 @@ struct Column {
     ColumnType type;
 };
 
+struct SecondaryIndexDef {
+    std::string name;
+    std::string column;
+    bool unique = false;
+};
+
 struct TableSchema {
     std::string tableName;
     std::vector<Column> columns;
     std::string primaryKey;
+    std::vector<SecondaryIndexDef> secondaryIndexes;
 };
 
 ColumnType parseColumnType(const std::string& s);
@@ -28,6 +35,7 @@ public:
     explicit SchemaManager(const std::string& dataDir);
 
     void createTable(const TableSchema& schema);
+    void updateTable(const TableSchema& schema);
     TableSchema loadTable(const std::string& tableName);
     void dropTable(const std::string& tableName);
     bool tableExists(const std::string& tableName) const;

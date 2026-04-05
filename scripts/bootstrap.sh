@@ -56,13 +56,13 @@ run_checks() {
   log "Running frontend lint"
   (cd "$ROOT_DIR/frontend" && npm run lint)
 
+  build_engine
+
   log "Running API tests"
   (cd "$ROOT_DIR/api" && npm test -- --runInBand)
 
   log "Building frontend"
   (cd "$ROOT_DIR/frontend" && npm run build)
-
-  build_engine
   log "All checks completed"
 }
 

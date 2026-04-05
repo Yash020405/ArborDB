@@ -76,6 +76,7 @@ router.post('/', async (req, res, next) => {
       result: {
         rows: engineResponse.rows || [],
         rowCount: engineResponse.rows ? engineResponse.rows.length : 0,
+        affectedRows: engineResponse.affected_rows || 0,
       },
       metrics: { parseTimeMs, engineTimeMs, totalTimeMs, ...(engineResponse.metrics || {}) },
     };

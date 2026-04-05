@@ -29,6 +29,7 @@ public:
 
     void createTable(const TableSchema& schema);
     TableSchema loadTable(const std::string& tableName);
+    void dropTable(const std::string& tableName);
     bool tableExists(const std::string& tableName) const;
     std::vector<std::string> listTables() const;
 

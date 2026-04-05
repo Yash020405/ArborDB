@@ -8,9 +8,16 @@
     "dev": "node --watch src/server.js",
     "test": "jest --verbose --forceExit --detectOpenHandles",
     "test:coverage": "jest --coverage --forceExit --detectOpenHandles",
-    "lint": "eslint src/"
+    "lint": "eslint --config eslint.config.js \"src/**/*.js\" \"tests/**/*.js\"",
+    "lint:fix": "eslint --config eslint.config.js \"src/**/*.js\" \"tests/**/*.js\" --fix"
   },
-  "keywords": ["database", "sql", "parser", "bplus-tree", "storage-engine"],
+  "keywords": [
+    "database",
+    "sql",
+    "parser",
+    "bplus-tree",
+    "storage-engine"
+  ],
   "author": "ArborDB Team",
   "license": "MIT",
   "dependencies": {
@@ -26,12 +33,17 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.2.0",
+    "globals": "^17.4.0",
     "jest": "^29.7.0",
     "supertest": "^7.0.0"
   },
   "jest": {
     "testEnvironment": "node",
-    "testMatch": ["**/tests/**/*.test.js"],
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ],
     "collectCoverageFrom": [
       "src/**/*.js",
       "!src/server.js"

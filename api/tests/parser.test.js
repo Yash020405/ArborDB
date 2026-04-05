@@ -128,8 +128,25 @@ describe('SQL Parser', () => {
       expect(() => parseSql('')).toThrow();
     });
 
-    test('throws on unsupported statement', () => {
-      expect(() => parseSql('DROP TABLE users')).toThrow();
+    test('parses DROP TABLE statement', () => {
+      const ast = parseSql('DROP TABLE users');
+      expect(ast).toEqual({ type: 'DROP_TABLE', table: 'users' });
+    });
+
+    test('parses UPDATE statement with WHERE', () => {
+      const ast = parseSql("UPDATE users SET name = 'New' WHERE id = 1");
+      expect(ast.type).toBe('UPDATE');
+      expect(ast.table).toBe('users');
+      expect(ast.column).toBe('name');
+      expect(ast.value).toBe('New');
+      expect(ast.condition).toEqual({ type: 'EQUALS', column: 'id', value: 1 });
+    });
+
+    test('parses DELETE statement with WHERE', () => {
+      const ast = parseSql('DELETE FROM users WHERE id BETWEEN 1 AND 10');
+      expect(ast.type).toBe('DELETE');
+      expect(ast.table).toBe('users');
+      expect(ast.condition).toEqual({ type: 'BETWEEN', column: 'id', start: 1, end: 10 });
     });
 
     test('throws on missing table name', () => {

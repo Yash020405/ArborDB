@@ -21,8 +21,11 @@ public:
     Metrics insert(const std::string& tableName, int64_t key, const nlohmann::json& row);
     std::pair<std::optional<nlohmann::json>, Metrics> search(const std::string& tableName, int64_t key);
     std::pair<std::vector<nlohmann::json>, Metrics> rangeQuery(const std::string& tableName, int64_t start, int64_t end);
-    std::pair<std::vector<nlohmann::json>, Metrics> fullScan(const std::string& tableName);
+    std::pair<std::vector<nlohmann::json>, Metrics> fullScan(const std::string& tableName, const nlohmann::json& filter = nlohmann::json());
     std::pair<std::vector<nlohmann::json>, Metrics> searchByColumn(const std::string& tableName, const std::string& column, const std::string& value);
+    std::pair<uint64_t, Metrics> updateRows(const std::string& tableName, const std::string& column, const nlohmann::json& value, const nlohmann::json& filter);
+    std::pair<uint64_t, Metrics> deleteRows(const std::string& tableName, const nlohmann::json& filter);
+    Metrics dropTable(const std::string& tableName);
     std::vector<std::string> listTables() const;
     TableSchema getSchema(const std::string& tableName);
 
@@ -37,6 +40,7 @@ private:
     Pager*  getOrOpenPager(const std::string& tableName);
     SecondaryIndex& getOrCreateIndex(const std::string& tableName, const TableSchema& schema);
     void    persistTree(const std::string& tableName);
+    void    rebuildTable(const std::string& tableName, const TableSchema& schema, const std::vector<nlohmann::json>& rows);
     void    validateRow(const TableSchema& schema, const nlohmann::json& row) const;
     std::string columnValueToString(const nlohmann::json& value) const;
     std::string pagerPath(const std::string& tableName) const;

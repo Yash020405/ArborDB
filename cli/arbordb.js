@@ -107,10 +107,11 @@ function handleMetaCommand(cmd) {
     case '.clear':
       console.clear();
       break;
-    case '.tables':
+    case '.tables': {
       const tables = engine.listTables();
       printTable(tables, ['name', 'primaryKey', 'rowCount']);
       break;
+    }
     case '.help':
       console.log(chalk.bold('List of all MySQL commands:'));
       console.log('  .exit, .quit    Exit the monitor');
@@ -159,7 +160,8 @@ async function executeSQL(sql) {
       printTable(rows);
       console.log(chalk.grey(`${rows.length} rows in set (${ms.toFixed(3)} sec)`));
     } else {
-      console.log(chalk.green(`Query OK, 0 rows affected (${ms.toFixed(3)} sec)`));
+      const affectedRows = engineResponse.affected_rows || 0;
+      console.log(chalk.green(`Query OK, ${affectedRows} rows affected (${ms.toFixed(3)} sec)`));
     }
 
     if (optimized && optimized.optimizationHint && process.env.DEBUG === 'true') {

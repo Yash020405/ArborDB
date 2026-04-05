@@ -25,6 +25,10 @@ private:
     nlohmann::json handleSearch(const nlohmann::json& cmd);
     nlohmann::json handleRange(const nlohmann::json& cmd);
     nlohmann::json handleFullScan(const nlohmann::json& cmd);
+    nlohmann::json handleSearchByColumn(const nlohmann::json& cmd);
+    nlohmann::json handleUpdate(const nlohmann::json& cmd);
+    nlohmann::json handleDelete(const nlohmann::json& cmd);
+    nlohmann::json handleDropTable(const nlohmann::json& cmd);
 
     nlohmann::json okResponse(std::vector<nlohmann::json> rows, const Metrics& m) const;
     nlohmann::json errorResponse(const std::string& message) const;

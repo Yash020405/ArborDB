@@ -105,10 +105,10 @@ export default function MetricsDashboard() {
                       {q.type}
                     </Badge>
                   </TableCell>
-                  <TableCell className="font-mono text-xs opacity-90 max-w-sm truncate" title={q.sql}>
-                    {q.sql}
+                  <TableCell className="font-mono text-xs opacity-90 max-w-sm truncate" title={q.sql || q.filename || ''}>
+                    {q.sql || q.filename || '-'}
                   </TableCell>
-                  <TableCell className="text-right text-primary font-mono text-xs font-semibold">{q.executionTimeMs}ms</TableCell>
+                  <TableCell className="text-right text-primary font-mono text-xs font-semibold">{q.executionTimeMs ?? '-'}{q.executionTimeMs !== undefined ? 'ms' : ''}</TableCell>
                   <TableCell className="text-center">
                     {q.status === 'success' ? (
                       <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-none px-2 shadow-none">OK</Badge>

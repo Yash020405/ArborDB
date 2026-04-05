@@ -12,19 +12,25 @@ function buildEngineCommand(ast, schemaMap = {}) {
     case 'CREATE_TABLE': return buildCreateTable(ast);
     case 'INSERT': return buildInsert(ast, schemaMap);
     case 'SELECT': return buildSelect(ast, schemaMap);
+    case 'UPDATE': return buildUpdate(ast);
+    case 'DELETE': return buildDelete(ast);
+    case 'DROP_TABLE': return { operation: 'drop_table', table: ast.table };
     default: throw new Error(`Unsupported operation type: ${ast.type}`);
   }
 }
 
 function buildCreateTable(ast) {
   const schema = {};
+  const columns = [];
   for (const col of ast.columns) {
     schema[col.name] = col.type;
+    columns.push({ name: col.name, type: col.type });
   }
   return {
     operation: 'create_table',
     table: ast.table,
     schema,
+    columns,
     primary_key: ast.primaryKey || null,
   };
 }
@@ -81,21 +87,106 @@ function buildSelect(ast, schemaMap) {
       if (isPrimaryKey) {
         return { operation: 'search', table: ast.table, key: condition.value };
       }
-      // Non-primary key — full scan with filter (secondary index would optimize this)
+
+      // Use secondary index lookup only when metadata confirms the index exists.
+      if (!tableSchema || !Array.isArray(tableSchema.secondaryIndexes)) {
+        return {
+          operation: 'full_scan',
+          table: ast.table,
+          filter: { column: condition.column, operator: '=', value: condition.value },
+        };
+      }
+
+      if (!tableSchema.secondaryIndexes.includes(condition.column)) {
+        return {
+          operation: 'full_scan',
+          table: ast.table,
+          filter: { column: condition.column, operator: '=', value: condition.value },
+        };
+      }
+
       return {
-        operation: 'full_scan',
+        operation: 'search_by_column',
         table: ast.table,
-        filter: { column: condition.column, operator: '=', value: condition.value },
+        column: condition.column,
+        value: condition.value,
       };
     }
 
     case 'BETWEEN': {
-      return { operation: 'range', table: ast.table, start: condition.start, end: condition.end };
+      const tableSchema = schemaMap[ast.table];
+      const isPrimaryKey = !tableSchema ||
+        !tableSchema.primaryKey ||
+        tableSchema.primaryKey === condition.column;
+
+      if (isPrimaryKey) {
+        return { operation: 'range', table: ast.table, start: condition.start, end: condition.end };
+      }
+
+      return {
+        operation: 'full_scan',
+        table: ast.table,
+        filter: {
+          column: condition.column,
+          operator: 'BETWEEN',
+          start: condition.start,
+          end: condition.end,
+        },
+      };
     }
 
     default:
       throw new Error(`Unsupported condition type: ${condition.type}`);
   }
+}
+
+function buildUpdate(ast) {
+  const result = {
+    operation: 'update',
+    table: ast.table,
+    column: ast.column,
+    value: ast.value,
+  };
+  
+  if (ast.condition) {
+    result.filter = buildFilterFromCondition(ast.condition);
+  }
+  
+  return result;
+}
+
+function buildDelete(ast) {
+  const result = {
+    operation: 'delete',
+    table: ast.table,
+  };
+
+  if (ast.condition) {
+    result.filter = buildFilterFromCondition(ast.condition);
+  }
+
+  return result;
+}
+
+function buildFilterFromCondition(condition) {
+  if (condition.type === 'EQUALS') {
+    return {
+      column: condition.column,
+      operator: '=',
+      value: condition.value,
+    };
+  }
+
+  if (condition.type === 'BETWEEN') {
+    return {
+      column: condition.column,
+      operator: 'BETWEEN',
+      start: condition.start,
+      end: condition.end,
+    };
+  }
+
+  throw new Error(`Unsupported condition type in filter: ${condition.type}`);
 }
 
 module.exports = { buildEngineCommand };

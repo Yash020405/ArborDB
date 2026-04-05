@@ -1,6 +1,5 @@
 'use strict';
 
-const path = require('path');
 const request = require('supertest');
 const { createApp } = require('../src/app');
 const engine = require('../src/engine');

@@ -2,8 +2,6 @@
 
 // Data validation — type checking, missing field detection, duplicate key detection.
 
-const { ValidationError } = require('../errors');
-
 const TYPE_VALIDATORS = {
   INT: (val) => {
     if (val === null || val === undefined) return false;

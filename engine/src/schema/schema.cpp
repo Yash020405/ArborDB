@@ -86,6 +86,18 @@ TableSchema SchemaManager::loadTable(const std::string& tableName) {
     return schema;
 }
 
+void SchemaManager::dropTable(const std::string& tableName) {
+    if (!tableExists(tableName)) {
+        throw std::runtime_error("Table does not exist: " + tableName);
+    }
+
+    const std::string path = schemaPath(tableName);
+    if (fs::exists(path)) {
+        fs::remove(path);
+    }
+    cache_.erase(tableName);
+}
+
 bool SchemaManager::tableExists(const std::string& tableName) const {
     if (cache_.count(tableName)) return true;
     return fs::exists(schemaPath(tableName));

@@ -140,6 +140,72 @@ describe('API Endpoints', () => {
       expect(res.body.optimization).toBeDefined();
       expect(res.body.optimization.strategy).toBeDefined();
     });
+
+    test('executes UPDATE and reflects changed values', async () => {
+      await request(app)
+        .post('/query')
+        .send({ sql: 'CREATE TABLE users (id INT, name STRING)' });
+      await request(app)
+        .post('/query')
+        .send({ sql: "INSERT INTO users VALUES (1, 'Old')" });
+
+      const updateRes = await request(app)
+        .post('/query')
+        .send({ sql: "UPDATE users SET name = 'New' WHERE id = 1" });
+
+      expect(updateRes.status).toBe(200);
+
+      const selectRes = await request(app)
+        .post('/query')
+        .send({ sql: 'SELECT * FROM users WHERE id = 1' });
+
+      expect(selectRes.body.result.rows).toHaveLength(1);
+      expect(selectRes.body.result.rows[0].name).toBe('New');
+    });
+
+    test('executes DELETE and removes matching rows', async () => {
+      await request(app)
+        .post('/query')
+        .send({ sql: 'CREATE TABLE logs (id INT, msg STRING)' });
+      await request(app)
+        .post('/query')
+        .send({ sql: "INSERT INTO logs VALUES (1, 'a')" });
+      await request(app)
+        .post('/query')
+        .send({ sql: "INSERT INTO logs VALUES (2, 'b')" });
+
+      const deleteRes = await request(app)
+        .post('/query')
+        .send({ sql: 'DELETE FROM logs WHERE id = 1' });
+
+      expect(deleteRes.status).toBe(200);
+
+      const selectRes = await request(app)
+        .post('/query')
+        .send({ sql: 'SELECT * FROM logs' });
+
+      expect(selectRes.body.result.rowCount).toBe(1);
+      expect(selectRes.body.result.rows[0].id).toBe(2);
+    });
+
+    test('executes DROP TABLE and prevents further reads', async () => {
+      await request(app)
+        .post('/query')
+        .send({ sql: 'CREATE TABLE tmp (id INT)' });
+
+      const dropRes = await request(app)
+        .post('/query')
+        .send({ sql: 'DROP TABLE tmp' });
+
+      expect(dropRes.status).toBe(200);
+
+      const afterDrop = await request(app)
+        .post('/query')
+        .send({ sql: 'SELECT * FROM tmp' });
+
+      expect(afterDrop.status).toBe(502);
+      expect(afterDrop.body.error.code).toBe('ENGINE_ERROR');
+    });
   });
 
   // ─── GET /tables ─────────────────────────────────────────

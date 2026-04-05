@@ -87,24 +87,13 @@ function optimize(ast, tableMetadata = null) {
       };
     }
 
-    if (secondaryIndexes.includes(condition.column)) {
-      return {
-        ...ast,
-        optimizationHint: {
-          strategy: 'secondary_index_range',
-          indexUsed: 'secondary',
-          column: condition.column,
-          reason: `Secondary index range scan on '${condition.column}'`,
-          estimatedCost: 'medium',
-        },
-      };
-    }
-
     return {
       ...ast,
       optimizationHint: {
         strategy: 'full_scan_filter',
-        reason: `No index on column '${condition.column}', full scan with range filter`,
+        reason: secondaryIndexes.includes(condition.column)
+          ? `Secondary index range scans are not supported yet for '${condition.column}', using full scan with range filter`
+          : `No index on column '${condition.column}', full scan with range filter`,
         estimatedCost: 'high',
         suggestion: `Consider creating a secondary index on '${condition.column}'`,
       },

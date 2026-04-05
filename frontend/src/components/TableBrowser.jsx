@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Database, RefreshCw, Plus, Upload, X, Search, FileText, Table as TableIcon } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -50,6 +50,8 @@ export default function TableBrowser() {
   const [filterCol, setFilterCol] = useState('');
   const [filterOp, setFilterOp] = useState('=');
   const [filterVal, setFilterVal] = useState('');
+  const [filterStart, setFilterStart] = useState('');
+  const [filterEnd, setFilterEnd] = useState('');
 
   const fetchTables = async () => {
     setLoading(true);
@@ -79,6 +81,19 @@ export default function TableBrowser() {
     } else {
       setErrorObj(err.message || String(err));
     }
+  };
+
+  const formatSqlValue = (rawValue) => {
+    const value = String(rawValue ?? '').trim();
+    if (value === '') return null;
+
+    const num = Number(value);
+    if (!Number.isNaN(num)) {
+      return value;
+    }
+
+    // Escape single quotes for SQL literals
+    return `'${value.replace(/'/g, "\\'")}'`;
   };
 
   // --- Create Table Logic ---
@@ -146,16 +161,27 @@ export default function TableBrowser() {
   };
 
   // --- View Data Logic ---
-  const fetchTableData = async () => {
+  const fetchTableData = useCallback(async () => {
     if (!selectedTable) return;
     setDataLoading(true);
     setErrorObj(null);
     
     let sql = `SELECT * FROM ${selectedTable.name}`;
-    if (filterCol && filterVal) {
-      const isNum = !isNaN(Number(filterVal)) && filterVal.trim() !== '';
-      const formattedVal = isNum ? filterVal : `'${filterVal}'`;
-      sql += ` WHERE ${filterCol} ${filterOp} ${formattedVal}`;
+    if (filterCol) {
+      if (filterOp === 'BETWEEN') {
+        if (!filterStart.trim() || !filterEnd.trim()) {
+          setErrorObj('BETWEEN filter requires both start and end values.');
+          setDataLoading(false);
+          return;
+        }
+
+        const startValue = formatSqlValue(filterStart);
+        const endValue = formatSqlValue(filterEnd);
+        sql += ` WHERE ${filterCol} BETWEEN ${startValue} AND ${endValue}`;
+      } else if (filterVal.trim()) {
+        const formattedVal = formatSqlValue(filterVal);
+        sql += ` WHERE ${filterCol} ${filterOp} ${formattedVal}`;
+      }
     }
     sql += ';';
 
@@ -168,13 +194,20 @@ export default function TableBrowser() {
     } finally {
       setDataLoading(false);
     }
-  };
+  }, [selectedTable, filterCol, filterOp, filterVal, filterStart, filterEnd]);
 
   useEffect(() => {
     if (activeModal === 'data' && selectedTable) {
       fetchTableData();
     }
-  }, [activeModal, selectedTable]);
+  }, [activeModal, selectedTable, fetchTableData]);
+
+  useEffect(() => {
+    if (filterOp !== 'BETWEEN') {
+      setFilterStart('');
+      setFilterEnd('');
+    }
+  }, [filterOp]);
 
   return (
     <div className="p-8">
@@ -212,7 +245,7 @@ export default function TableBrowser() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {tables.map(table => (
-            <Card key={table.name} className="transition-all hover:border-primary/50 hover:shadow-md cursor-pointer group flex flex-col" onClick={() => { setSelectedTable(table); setFilterCol(''); setFilterVal(''); setActiveModal('data'); }}>
+            <Card key={table.name} className="transition-all hover:border-primary/50 hover:shadow-md cursor-pointer group flex flex-col" onClick={() => { setSelectedTable(table); setFilterCol(''); setFilterOp('='); setFilterVal(''); setFilterStart(''); setFilterEnd(''); setActiveModal('data'); }}>
               <div className="p-4 border-b flex items-start gap-4 bg-muted/10 group-hover:bg-primary/5 transition-colors">
                 <div className="p-2.5 rounded-lg bg-primary/10 text-primary">
                   <TableIcon size={22} />
@@ -338,10 +371,23 @@ export default function TableBrowser() {
                </select>
              </div>
 
-             <div className="flex-[2] space-y-1">
-               <label className="text-xs font-semibold uppercase text-muted-foreground">Value</label>
-               <Input className="h-9 font-mono" placeholder={filterOp === 'BETWEEN' ? "e.g., 10 AND 50" : "Search value..."} value={filterVal} onChange={e => setFilterVal(e.target.value)} onKeyDown={e => e.key === 'Enter' && fetchTableData()} />
-             </div>
+             {filterOp === 'BETWEEN' ? (
+               <>
+                 <div className="flex-1 space-y-1">
+                   <label className="text-xs font-semibold uppercase text-muted-foreground">Start</label>
+                   <Input className="h-9 font-mono" placeholder="Start value" value={filterStart} onChange={e => setFilterStart(e.target.value)} onKeyDown={e => e.key === 'Enter' && fetchTableData()} />
+                 </div>
+                 <div className="flex-1 space-y-1">
+                   <label className="text-xs font-semibold uppercase text-muted-foreground">End</label>
+                   <Input className="h-9 font-mono" placeholder="End value" value={filterEnd} onChange={e => setFilterEnd(e.target.value)} onKeyDown={e => e.key === 'Enter' && fetchTableData()} />
+                 </div>
+               </>
+             ) : (
+               <div className="flex-[2] space-y-1">
+                 <label className="text-xs font-semibold uppercase text-muted-foreground">Value</label>
+                 <Input className="h-9 font-mono" placeholder="Search value..." value={filterVal} onChange={e => setFilterVal(e.target.value)} onKeyDown={e => e.key === 'Enter' && fetchTableData()} />
+               </div>
+             )}
 
              <Button onClick={fetchTableData} disabled={dataLoading} className="gap-2 h-9 px-6">
                 <Search size={14} /> Run Filter

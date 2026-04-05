@@ -80,7 +80,7 @@ function executeEngine(enginePath, jsonStr, timeout) {
           ));
         }
         return resolve(response);
-      } catch (parseErr) {
+      } catch {
         return reject(new EngineError(
           'Failed to parse engine response as JSON',
           { stdout, stderr, errorCode: 'ENGINE_PARSE_ERROR' }

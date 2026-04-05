@@ -72,9 +72,15 @@ class Parser {
       ast = this.parseInsert();
     } else if (this.checkKeyword('SELECT')) {
       ast = this.parseSelect();
+    } else if (this.checkKeyword('UPDATE')) {
+      ast = this.parseUpdate();
+    } else if (this.checkKeyword('DELETE')) {
+      ast = this.parseDelete();
+    } else if (this.checkKeyword('DROP')) {
+      ast = this.parseDropTable();
     } else {
       throw this._error(
-        `Unexpected token '${token.value}'. Expected CREATE, INSERT, or SELECT`,
+        `Unexpected token '${token.value}'. Expected CREATE, INSERT, SELECT, UPDATE, DELETE, or DROP`,
         token
       );
     }
@@ -208,6 +214,51 @@ class Parser {
     }
 
     return ast;
+  }
+
+  // UPDATE table SET col = val [WHERE condition]
+  parseUpdate() {
+    this.expect(TokenType.KEYWORD, 'UPDATE');
+    const tableName = this.expect(TokenType.IDENTIFIER).value;
+
+    this.expect(TokenType.KEYWORD, 'SET');
+    const column = this.expect(TokenType.IDENTIFIER).value;
+    this.expect(TokenType.EQUALS);
+    const value = this._parseValue();
+
+    const ast = { type: 'UPDATE', table: tableName, column, value };
+
+    if (this.checkKeyword('WHERE')) {
+      this.advance();
+      ast.condition = this.parseCondition();
+    }
+
+    return ast;
+  }
+
+  // DELETE FROM table [WHERE condition]
+  parseDelete() {
+    this.expect(TokenType.KEYWORD, 'DELETE');
+    this.expect(TokenType.KEYWORD, 'FROM');
+    const tableName = this.expect(TokenType.IDENTIFIER).value;
+
+    const ast = { type: 'DELETE', table: tableName };
+
+    if (this.checkKeyword('WHERE')) {
+      this.advance();
+      ast.condition = this.parseCondition();
+    }
+
+    return ast;
+  }
+
+  // DROP TABLE table
+  parseDropTable() {
+    this.expect(TokenType.KEYWORD, 'DROP');
+    this.expect(TokenType.KEYWORD, 'TABLE');
+    const tableName = this.expect(TokenType.IDENTIFIER).value;
+
+    return { type: 'DROP_TABLE', table: tableName };
   }
 
   // WHERE col = value  |  WHERE col BETWEEN val1 AND val2

@@ -21,6 +21,10 @@ describe('Query Executor', () => {
         operation: 'create_table',
         table: 'users',
         schema: { id: 'INT', name: 'STRING' },
+        columns: [
+          { name: 'id', type: 'INT' },
+          { name: 'name', type: 'STRING' },
+        ],
         primary_key: 'id',
       });
     });
@@ -121,6 +125,24 @@ describe('Query Executor', () => {
       const cmd = buildEngineCommand(ast);
       expect(cmd).toEqual({ operation: 'range', table: 'users', start: 1, end: 10 });
     });
+
+      test('builds full_scan with filter for BETWEEN on non-primary key', () => {
+        const ast = {
+          type: 'SELECT',
+          table: 'users',
+          columns: ['*'],
+          condition: { type: 'BETWEEN', column: 'age', start: 20, end: 29 },
+        };
+
+        const schemaMap = { users: { primaryKey: 'id', secondaryIndexes: ['age'] } };
+        const cmd = buildEngineCommand(ast, schemaMap);
+
+        expect(cmd).toEqual({
+          operation: 'full_scan',
+          table: 'users',
+          filter: { column: 'age', operator: 'BETWEEN', start: 20, end: 29 },
+        });
+      });
   });
 
   describe('Error Cases', () => {
@@ -129,7 +151,49 @@ describe('Query Executor', () => {
     });
 
     test('throws on unsupported type', () => {
-      expect(() => buildEngineCommand({ type: 'DELETE' })).toThrow('Unsupported operation');
+      expect(() => buildEngineCommand({ type: 'TRUNCATE' })).toThrow('Unsupported operation');
+    });
+  });
+
+  describe('UPDATE/DELETE/DROP', () => {
+    test('builds update command with equals filter', () => {
+      const ast = {
+        type: 'UPDATE',
+        table: 'users',
+        column: 'name',
+        value: 'Updated',
+        condition: { type: 'EQUALS', column: 'id', value: 1 },
+      };
+
+      const cmd = buildEngineCommand(ast);
+      expect(cmd).toEqual({
+        operation: 'update',
+        table: 'users',
+        column: 'name',
+        value: 'Updated',
+        filter: { column: 'id', operator: '=', value: 1 },
+      });
+    });
+
+    test('builds delete command with between filter', () => {
+      const ast = {
+        type: 'DELETE',
+        table: 'users',
+        condition: { type: 'BETWEEN', column: 'id', start: 10, end: 20 },
+      };
+
+      const cmd = buildEngineCommand(ast);
+      expect(cmd).toEqual({
+        operation: 'delete',
+        table: 'users',
+        filter: { column: 'id', operator: 'BETWEEN', start: 10, end: 20 },
+      });
+    });
+
+    test('builds drop table command', () => {
+      const ast = { type: 'DROP_TABLE', table: 'users' };
+      const cmd = buildEngineCommand(ast);
+      expect(cmd).toEqual({ operation: 'drop_table', table: 'users' });
     });
   });
 });
@@ -194,5 +258,19 @@ describe('Query Optimizer', () => {
     const meta = { primaryKey: 'id' };
     const result = optimize(ast, meta);
     expect(result.optimizationHint.strategy).toBe('primary_key_range');
+  });
+
+  test('returns full_scan_filter for BETWEEN on secondary index column', () => {
+    const ast = {
+      type: 'SELECT',
+      table: 'users',
+      columns: ['*'],
+      condition: { type: 'BETWEEN', column: 'age', start: 20, end: 30 },
+    };
+    const meta = { primaryKey: 'id', secondaryIndexes: ['age'] };
+    const result = optimize(ast, meta);
+
+    expect(result.optimizationHint.strategy).toBe('full_scan_filter');
+    expect(result.optimizationHint.reason).toContain('not supported yet');
   });
 });

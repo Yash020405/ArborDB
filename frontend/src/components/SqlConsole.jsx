@@ -166,7 +166,13 @@ export default function SqlConsole() {
             </div>
           )}
 
-          {!loading && !error && result && renderTable(result.result?.rows)}
+          {!loading && !error && result && result.query?.type === 'SELECT' && renderTable(result.result?.rows)}
+
+          {!loading && !error && result && result.query?.type !== 'SELECT' && (
+            <div className="p-6 text-sm">
+              Query OK. <span className="font-semibold text-primary">{result.result?.affectedRows || 0}</span> rows affected.
+            </div>
+          )}
           
           {!loading && !error && !result && (
             <div className="p-6 text-muted-foreground text-sm flex h-full items-center justify-center">

@@ -1,397 +1,333 @@
-# 🌳 ArborDB
+# ArborDB
 
-### A Mini MySQL-like Database Engine Built from Scratch
+ArborDB is a local database system built for learning and systems engineering practice. It combines:
 
----
+- A native C++ storage engine
+- A Node.js API layer for SQL parsing and execution
+- A React frontend for querying and monitoring
+- A Node.js CLI for interactive usage
 
-## 🚀 Overview
+The project focuses on correctness, observability, and clear separation between query planning and storage execution.
 
-**ArborDB** is a lightweight, extensible database engine inspired by real-world systems like MySQL and PostgreSQL.
-It is designed to demonstrate how databases work internally — from storage engines and indexing to query execution and data visualization.
+## Architecture
 
-> 🌳 *“Arbor” (Latin for tree) reflects the core of the system — a B+ Tree–based storage engine.*
-
----
-
-## 🎯 Key Features
-
-### 🧱 Core Database Engine
-
-* B+ Tree–based primary index
-* Key-value storage model (Primary Key → Row)
-* Efficient **O(log n)** search and insert
-* Range queries via linked leaf nodes
-
----
-
-### 🔍 Query Engine
-
-* SQL-like query support:
-
-  * `CREATE TABLE`
-  * `INSERT`
-  * `SELECT`
-  * `WHERE (=, BETWEEN)`
-* Custom-built parser + executor
-
----
-
-### 📊 Interfaces
-
-* 🖥️ CLI for developers
-* 🌐 GUI (React) for interactive usage
-* 📈 Dashboard for metrics & monitoring
-
----
-
-### 📂 Data Import
-
-* CSV upload
-* Excel (.xlsx) support
-* JSON ingestion (optional)
-* Column mapping + preview before insert
-
----
-
-### 📈 Metrics & Observability
-
-* Query execution time
-* Disk reads/writes
-* Rows scanned
-* Index usage
-
----
-
-### 💾 Persistence
-
-* Disk-backed storage
-* Page-based system (like real DBs)
-* Serialized B+ Tree nodes
-
----
-
-### ⚡ Advanced (Planned)
-
-* Secondary indexes
-* Transactions (WAL)
-* Concurrency control
-* Buffer pool caching
-
----
-
-## 🧠 Architecture
-
-```
-Frontend (React GUI)
-        ↓
-API Layer (Node.js)
-        ↓
-Query Engine (Parser + Executor)
-        ↓
-Storage Engine (B+ Tree)
-        ↓
-Disk (Page-based storage)
+```text
+Client (Frontend or CLI)
+  -> API (/query, /upload, /tables, /metrics)
+  -> SQL tokenizer/parser/executor/optimizer
+  -> Engine bridge (mock or native)
+  -> Native storage engine (B+ tree, schema, WAL log, persistence)
+  -> Disk files under data/tables
 ```
 
----
+## Current Scope
 
-## 🧱 System Components
+Implemented:
 
----
+- Table lifecycle: `CREATE TABLE`, `DROP TABLE`
+- Data operations: `INSERT`, `SELECT`, `UPDATE`, `DELETE`
+- Predicate support: `=` and `BETWEEN`
+- Primary-key and secondary-index aware execution paths
+- CSV and XLSX upload pipeline through API
+- Query metrics and recent-query tracking
+- Persistent native storage on disk
 
-### 1. Storage Engine (C++)
+Not implemented yet:
 
-* B+ Tree implementation
-* Node splitting & balancing
-* Leaf node linking for range queries
+- Transaction semantics (BEGIN/COMMIT/ROLLBACK)
+- Multi-user auth/session management
+- Distributed replication
 
----
+## Repository Layout
 
-### 2. Disk Layer
-
-* Page-based storage (e.g., 4KB pages)
-* Serialization / deserialization
-* File-backed persistence
-
----
-
-### 3. Query Engine
-
-* Tokenizer
-* SQL parser (AST)
-* Execution engine
-
----
-
-### 4. API Layer (Node.js)
-
-* Query execution endpoint
-* File upload handling
-* Communication bridge with engine
-
----
-
-### 5. Frontend (React)
-
-* Query console
-* Table viewer
-* File upload UI
-* Metrics dashboard
-
----
-
-## 📂 Repository Structure
-
-```
-arbor-db/
-├── engine/        # C++ core engine
-├── api/           # Node.js backend
-├── frontend/      # React frontend
-├── data/          # Stored database files
-├── docs/          # Design docs / PRD
-└── scripts/       # Setup scripts
+```text
+api/        Express API, query execution, upload services, tests
+cli/        Interactive CLI client
+engine/     C++ engine and JS query layer
+frontend/   React UI (SQL console, table browser, metrics dashboard)
+data/       Persistent table/schema/WAL files
 ```
 
----
+## Query and Execution Behavior
 
-## ⚙️ Tech Stack
-
-| Layer          | Technology         |
-| -------------- | ------------------ |
-| Storage Engine | C++ (C++17/20)     |
-| API            | Node.js + Express  |
-| Frontend       | React + TypeScript |
-| Build Tools    | CMake, Ninja       |
-| File Parsing   | papaparse, xlsx    |
-
----
-
-## 🔄 Data Flow
-
-### Insert Flow
-
-```
-GUI → API → Query Engine → Storage Engine → Disk
-```
-
-### Query Flow
-
-```
-User Query → Parser → Executor → B+ Tree → Result
-```
-
-### CSV Upload Flow
-
-```
-Upload → Parse → Validate → Batch Insert → Index Update
-```
-
----
-
-## 📊 Supported Queries
+Supported SQL forms:
 
 ```sql
-CREATE TABLE users (id INT, name STRING);
-
-INSERT INTO users VALUES (1, "Yash");
-
+CREATE TABLE users (id INT PRIMARY KEY, name STRING, age INT);
+INSERT INTO users VALUES (1, 'Alice', 30);
 SELECT * FROM users WHERE id = 1;
-
-SELECT * FROM users WHERE id BETWEEN 10 AND 20;
+SELECT * FROM users WHERE age BETWEEN 20 AND 40;
+UPDATE users SET name = 'Alicia' WHERE id = 1;
+DELETE FROM users WHERE id = 2;
+DROP TABLE users;
 ```
 
----
+Execution strategies currently used:
 
-## 📦 Data Model
+- `WHERE pk = value` -> primary key lookup (`search`)
+- `WHERE secondary_col = value` -> secondary index lookup (`search_by_column`)
+- `WHERE pk BETWEEN a AND b` -> primary key range scan (`range`)
+- `WHERE non_pk BETWEEN a AND b` -> full scan with filter (`full_scan` + filter)
 
+Indexing notes:
+
+- There is no user-facing `CREATE INDEX` command in the current SQL grammar.
+- Index usage is automatic: the planner uses primary/secondary index paths when available and falls back to full scan + filter when not available.
+
+Notes on consistency:
+
+- Optimizer hints are aligned with current executable engine capabilities.
+- Secondary-index range scans are not executed yet; non-primary `BETWEEN` falls back to filtered full scan.
+
+## Persistence Model
+
+In native mode, tables are persisted under the configured data directory:
+
+```text
+data/tables/
+  <table>.schema.json
+  <table>.db
+  wal.log
 ```
-Primary Key → Serialized Row
-```
 
-Example:
+Behavior verified by tests:
 
-```
-1 → { id: 1, name: "Yash" }
-```
+- Create/insert/select are persisted to disk
+- Drop removes schema and data artifacts
+- API metadata endpoints (`/tables`, `/metrics`) reflect persisted state
 
----
+## Metrics and Observability
 
-## 📁 Storage Layout
+API query responses include merged metrics:
 
-```
-data/
-├── users/
-│   ├── primary_index.db
-│   ├── secondary_index_name.db
-│
-├── schema.json
-├── wal.log
-```
+- Parse/total timing from API
+- Engine timing
+- Disk reads
+- Node traversals
+- Rows returned / affected rows
 
----
+The API also provides:
 
-## 🧪 Testing Strategy
+- `GET /metrics` for aggregates and engine summary
+- `GET /metrics/recent` for recent query log
 
-### Engine Tests
+`/metrics` tracks and exposes differences between indexed lookup paths and scan/filter paths via traversal and timing counters.
 
-* B+ Tree correctness
-* Insert/search/range
+## Prerequisites
 
-### API Tests
+- Node.js 18+
+- npm 9+
+- g++ with C++17 support
 
-* Query execution
-* Upload endpoints
+## Quick Start (Fresh Clone)
 
-### Frontend Tests
-
-* UI interactions
-* API integration
-
----
-
-## ⚠️ Edge Cases Handled
-
-* Duplicate primary keys
-* Invalid schema
-* File upload errors
-* Disk write failures
-* Partial writes / crashes
-
----
-
-## 🔐 Constraints
-
-* ❌ No external database usage
-* ✅ File system–based storage
-* ✅ Custom indexing implementation
-
----
-
-## 📅 Development Roadmap
-
-### Phase 1 (Core Engine)
-
-* B+ Tree
-* Insert/Search/Range
-
-### Phase 2 (Persistence + CLI)
-
-* Disk storage
-* CLI interface
-
-### Phase 3 (Query Engine)
-
-* SQL parser
-* Execution engine
-
-### Phase 4 (GUI + Upload)
-
-* React UI
-* CSV/Excel ingestion
-
-### Phase 5 (Enhancements)
-
-* Secondary indexes
-* Metrics dashboard
-
-### Phase 6 (Advanced)
-
-* Transactions (WAL)
-* Concurrency control
-
----
-
-## 👨‍💻 Team Responsibilities
-
-| Role         | Responsibility |
-| ------------ | -------------- |
-| Engine Dev   | B+ Tree + Disk |
-| Backend Dev  | API + Upload   |
-| Frontend Dev | UI + Dashboard |
-| Systems Dev  | Query Engine   |
-
----
-
-## 🛠️ Setup Instructions
-
-### 1. Clone Repo
+One-command setup and run:
 
 ```bash
-git clone https://github.com/your-username/arbor-db.git
-cd arbor-db
+./scripts/bootstrap.sh up
 ```
 
----
+Other useful bootstrap commands:
 
-### 2. Build Engine
+```bash
+./scripts/bootstrap.sh setup
+./scripts/bootstrap.sh check
+./scripts/bootstrap.sh api
+./scripts/bootstrap.sh frontend
+./scripts/bootstrap.sh cli
+```
+
+If you prefer manual setup, use the steps below.
+
+```bash
+git clone https://github.com/Yash020405/ArborDB.git
+cd ArborDB
+
+# Build native engine
+cd engine
+mkdir -p build
+g++ -std=c++17 -O2 \
+  -I./vendor -I./src \
+  main.cpp \
+  src/engine.cpp \
+  src/wal.cpp \
+  src/disk/pager.cpp \
+  src/schema/schema.cpp \
+  src/storage/btree.cpp \
+  src/storage/secondary_index.cpp \
+  src/storage/serializer.cpp \
+  src/storage/table_store.cpp \
+  -o build/engine
+
+# Install dependencies
+cd ../api && npm install
+cd ../frontend && npm install
+cd ../cli && npm install
+
+# Start API (terminal 1)
+cd ../api && npm start
+
+# Start frontend (terminal 2)
+cd ../frontend && npm run dev
+
+# Optional: run CLI (terminal 3)
+cd ../cli && node arbordb.js
+```
+
+After startup:
+
+- API: `http://localhost:3000`
+- Frontend: Vite default URL shown in terminal (usually `http://localhost:5173`)
+
+## Setup
+
+### 1. Build the native engine
+
+There is currently no checked-in CMake file in `engine/`, so build with g++ directly:
 
 ```bash
 cd engine
-mkdir build && cd build
-cmake .. && make
+mkdir -p build
+
+g++ -std=c++17 -O2 \
+  -I./vendor -I./src \
+  main.cpp \
+  src/engine.cpp \
+  src/wal.cpp \
+  src/disk/pager.cpp \
+  src/schema/schema.cpp \
+  src/storage/btree.cpp \
+  src/storage/secondary_index.cpp \
+  src/storage/serializer.cpp \
+  src/storage/table_store.cpp \
+  -o build/engine
 ```
 
----
-
-### 3. Run API
+### 2. Install API dependencies
 
 ```bash
-cd ../../api
+cd api
 npm install
+```
+
+Optional API environment setup:
+
+```bash
+cp .env.example .env
+```
+
+Important environment variables:
+
+- `USE_MOCK_ENGINE=true|false`
+- `ENGINE_PATH=../engine/build/engine`
+- `DATA_DIR=../data`
+
+### 3. Install frontend dependencies
+
+```bash
+cd frontend
+npm install
+```
+
+Optional frontend environment variable:
+
+- `VITE_API_BASE_URL=http://localhost:3000`
+
+### 4. Install CLI dependencies
+
+```bash
+cd cli
+npm install
+```
+
+## Running the System
+
+Start API:
+
+```bash
+cd api
 npm start
 ```
 
----
-
-### 4. Run Frontend
+Start frontend:
 
 ```bash
-cd ../frontend
-npm install
+cd frontend
 npm run dev
 ```
 
----
+Run CLI:
 
-## 📈 Example Output
-
-```
-Query OK
-Rows Returned: 10
-Execution Time: 0.003 sec
-Disk Reads: 2
+```bash
+cd cli
+node arbordb.js
 ```
 
----
+## Quality Gates
 
-## 🚀 Future Scope
+### Linting
 
-* Query optimizer
-* Index selection strategies
-* Distributed storage
-* Replication
-* Cloud deployment
+API:
 
----
+```bash
+cd api
+npm run lint
+```
 
-## 💡 Inspiration
+CLI:
 
-* MySQL (InnoDB)
-* PostgreSQL
-* LevelDB / RocksDB
+```bash
+cd cli
+npm run lint
+```
 
----
+Frontend:
 
-## 🧾 Resume Description
+```bash
+cd frontend
+npm run lint
+```
 
-> Built a disk-backed database engine with B+ Tree indexing, supporting SQL-like queries, range scans, and real-time performance metrics, inspired by MySQL architecture.
+### Tests
 
----
+API suite:
 
-## ⭐ Final Note
+```bash
+cd api
+npm test -- --runInBand
+```
 
-ArborDB is not just a project — it’s a **deep dive into how databases actually work under the hood**.
+Current tested areas include:
 
----
+- SQL tokenizer/parser/executor
+- API endpoints and error handling
+- Upload and validation services
+- Metrics consistency behavior
+- Native persistence lifecycle (runs when native engine binary exists)
 
-**🌳 Grow your own database. Understand it. Control it.**
+Targeted verification for error handling and indexing behavior:
+
+```bash
+cd api
+npm test -- --runInBand tests/error-handling.test.js tests/executor.test.js tests/metrics-consistency.test.js
+```
+
+## API Endpoints
+
+- `POST /query` execute SQL
+- `POST /upload` upload CSV/XLSX into existing table
+- `GET /tables` list tables and metadata
+- `GET /tables/:name` table details
+- `GET /metrics` aggregate metrics
+- `GET /metrics/recent` recent query events
+- `GET /health` service health
+
+## Development Notes
+
+- Keep parser/executor output and engine operation contract in sync.
+- Prefer schema-aware command generation for stable behavior across mock/native modes.
+- For native mode, ensure `engine/build/engine` is rebuilt after C++ changes.
+
+## License
+
+MIT

@@ -42,7 +42,16 @@ async function callEngine(engineJson, options = {}) {
 
 function executeEngine(enginePath, jsonStr, timeout) {
   return new Promise((resolve, reject) => {
-    execFile(enginePath, [jsonStr], { timeout, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+    
+    // Resolve DATA_DIR relative to the api directory
+    const apiDir = path.resolve(__dirname, '../../');
+    const baseDir = process.env.DATA_DIR 
+      ? (path.isAbsolute(process.env.DATA_DIR) ? process.env.DATA_DIR : path.resolve(apiDir, process.env.DATA_DIR))
+      : path.resolve(apiDir, '../data');
+      
+    const tablesDir = path.join(baseDir, 'tables');
+    
+    execFile(enginePath, [jsonStr, tablesDir], { timeout, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (error) {
         if (error.code === 'ENOENT') {
           return reject(new EngineError(

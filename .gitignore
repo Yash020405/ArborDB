@@ -1,0 +1,28 @@
+# Workspace/editor
+.vscode/
+.idea/
+.DS_Store
+
+# Dependencies
+**/node_modules/
+
+# Logs and coverage
+*.log
+**/coverage/
+
+# Build artifacts
+engine/build/
+frontend/dist/
+frontend/dist-ssr/
+
+# Runtime data artifacts
+data/tables/*.db
+data/tables/wal.log
+data/tables/native_test.schema.json
+
+# Environment files
+**/.env
+**/.env.*
+
+# Local planning notes
+work.md

@@ -47,7 +47,7 @@ rl.on('line', async (line) => {
     return;
   }
 
-  // Clear current input buffer like MySQL
+  // Clear current input buffer in monitor mode
   if (trimmed === '\\c') {
     statementBuffer = '';
     rl.setPrompt('arbordb> ');
@@ -113,7 +113,7 @@ function handleMetaCommand(cmd) {
       break;
     }
     case '.help':
-      console.log(chalk.bold('List of all MySQL commands:'));
+      console.log(chalk.bold('List of all monitor commands:'));
       console.log('  .exit, .quit    Exit the monitor');
       console.log('  .tables         List all tables');
       console.log('  .schema <table> Describe table schema');

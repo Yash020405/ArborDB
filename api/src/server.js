@@ -5,6 +5,7 @@
 require('dotenv').config();
 
 const { createApp } = require('./app');
+const engine = require('./engine');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const NODE_ENV = process.env.NODE_ENV || 'development';
@@ -17,7 +18,7 @@ const server = app.listen(PORT, () => {
   console.log('  ─────────────────────────────────────');
   console.log(`  Environment : ${NODE_ENV}`);
   console.log(`  Port        : ${PORT}`);
-  console.log('  Engine      : Native (C++)');
+  console.log(`  Engine      : Native (C++) [${engine.getExecutionMode()}]`);
   console.log(`  URL         : http://localhost:${PORT}`);
   console.log('');
   console.log('  Endpoints:');
@@ -31,6 +32,7 @@ const server = app.listen(PORT, () => {
 
 function gracefulShutdown(signal) {
   console.log(`\n  Received ${signal}. Shutting down...`);
+  engine.shutdown();
   server.close(() => {
     console.log('  Server closed.');
     process.exit(0);

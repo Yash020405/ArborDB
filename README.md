@@ -98,6 +98,7 @@ Important API env variables:
 
 - `ENGINE_PATH=../engine/build/engine`
 - `DATA_DIR=../data`
+- The API uses a persistent native worker by default (no per-query process spawn).
 
 ## Professional User Flow
 
@@ -139,30 +140,71 @@ ORDER BY total_amount DESC;
 
 ## Index vs Non-Index Metrics
 
-Measured on 2026-04-05 using:
+Measured on 2026-04-05 using the full evaluation profile:
 
 ```bash
 cd api
-npm run benchmark:index
+npm run benchmark:eval
 ```
 
-Benchmark workload:
+Comparison workload (steady-state):
 
-- Dataset: `perf_users` with 750 rows
-- Predicate: `email = 'user_615@arbordb.local'`
-- Iterations per mode: 20
+- Dataset: `bench_users` with 1500 rows
+- Indexed path: `secondary_index_lookup` workload (`WHERE email = ...`)
+- Non-index path: `non_index_scan_filter` workload (`WHERE score BETWEEN ...`)
 
 Results:
 
-| Mode | Strategy | Avg Nodes Traversed | P95 Nodes Traversed | Avg Total Time (ms) | P95 Total Time (ms) |
-| --- | --- | ---: | ---: | ---: | ---: |
-| Non-indexed | `full_scan_filter` | 253 | 253 | 22.70 | 34 |
-| Indexed | `secondary_index_lookup` | 5 | 5 | 17.65 | 24 |
+| Mode | Strategy | Query p50 (ms) | Query p95 (ms) | Client p50 (ms) | Client p95 (ms) | Nodes Traversed p50 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Non-indexed | `full_scan_filter` | 10 | 11 | 15.73 | 17.91 | 503 |
+| Indexed | `secondary_index_lookup` | 1 | 2 | 4.95 | 7.30 | 5 |
 
 Observed improvement:
 
-- Traversal reduction: 98.02%
-- Total-time reduction: 22.25%
+- Query p50 reduction: 90.00%
+- Query p95 reduction: 81.82%
+- Client p50 reduction: 68.53%
+- Client p95 reduction: 59.24%
+- Traversal reduction (p50): 99.01%
+
+## Advanced Evaluation
+
+Run advanced latency evaluation (cold-start vs steady-state percentiles):
+
+```bash
+cd api
+npm run benchmark:eval
+```
+
+This benchmark runs with the persistent worker mode and reports, per workload:
+
+- `cold_start` metrics after cycling the worker
+- `steady_state` percentile metrics after warm-up iterations
+- `cache_effect` percentage improvement from cold-start to steady-state
+
+It emits percentile stats (`avg`, `p50`, `p95`, `p99`, `max`) for:
+
+- `query_time_ms` (server-side statement duration)
+- `client_round_trip_ms` (application-observed end-to-end latency)
+- `engine_boundary_ms` (API->native call envelope)
+- `engine_core_ms` (native execution core time)
+- `nodes_traversed` and `disk_reads` (execution-path diagnostics)
+
+Use `cache_effect` to quantify in-memory cache gains for hot query paths.
+
+Latest full evaluation snapshot (2026-04-05):
+
+- Runtime: 20.99 seconds
+- Dataset: 1500 rows (`bench_users`)
+- Engine mode: `persistent-worker`
+
+| Workload | Strategy | Query p50 (ms) | Query p95 (ms) | Client p50 (ms) | Client p95 (ms) | Cache Query p50 Improve | Cache Client p50 Improve |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `pk_point_lookup` | `primary_key_lookup` | 1 | 1 | 4.72 | 6.70 | 95.65% | 81.80% |
+| `secondary_index_lookup` | `secondary_index_lookup` | 1 | 2 | 4.95 | 7.30 | 95.65% | 82.00% |
+| `non_index_scan_filter` | `full_scan_filter` | 10 | 11 | 15.73 | 17.91 | 71.43% | 62.44% |
+| `order_by_limit` | `advanced_select` | 20 | 25 | 23.87 | 31.66 | 67.74% | 66.65% |
 
 ## Query Error Taxonomy (Hardened)
 

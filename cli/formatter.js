@@ -3,7 +3,7 @@
 const chalk = require('chalk');
 
 /**
- * Basic formatting utility to print MySQL-style ASCII tables
+ * Basic formatting utility to print SQL-style ASCII tables
  */
 function printTable(rows, columns) {
   if (!rows || rows.length === 0) {

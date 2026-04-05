@@ -17,6 +17,7 @@ router.get('/', (req, res) => {
     metrics,
     engine: {
       type: 'native',
+      mode: engine.getExecutionMode(),
       tablesCount: tables.length,
       totalRows: tables.reduce((sum, t) => sum + (t.rowCount || 0), 0),
     },

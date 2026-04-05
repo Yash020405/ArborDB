@@ -498,6 +498,7 @@ describe('API Endpoints', () => {
     test('includes engine info', async () => {
       const res = await request(app).get('/metrics');
       expect(res.body.engine.type).toBe('native');
+      expect(res.body.engine.mode).toBeDefined();
     });
   });
 

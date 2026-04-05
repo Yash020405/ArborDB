@@ -4,7 +4,12 @@
 
 const fs = require('fs');
 const path = require('path');
-const { callEngine: callNativeEngine } = require('./caller');
+const {
+  callEngine: callNativeEngine,
+  resetPersistentEngine,
+  shutdownPersistentEngine,
+  getEngineExecutionMode,
+} = require('./caller');
 
 async function callEngine(engineJson) {
   return callNativeEngine(engineJson);
@@ -122,6 +127,9 @@ function reset() {
     return;
   }
 
+  // Ensure worker memory/cache is reset between tests.
+  resetPersistentEngine('test-reset');
+
   const dir = getTablesDir();
   const files = fs.readdirSync(dir);
 
@@ -132,4 +140,20 @@ function reset() {
   }
 }
 
-module.exports = { callEngine, listTables, getTableInfo, getSchemaMap, reset };
+function shutdown() {
+  shutdownPersistentEngine();
+}
+
+function getExecutionMode() {
+  return getEngineExecutionMode();
+}
+
+module.exports = {
+  callEngine,
+  listTables,
+  getTableInfo,
+  getSchemaMap,
+  reset,
+  shutdown,
+  getExecutionMode,
+};

@@ -147,6 +147,12 @@ class Parser {
         const normalizedType = this._normalizeType(colType);
         const colDef = { name: colName, type: normalizedType };
 
+        if (this.check(TokenType.LPAREN)) {
+          this.advance();
+          this.expect(TokenType.NUMBER);
+          this.expect(TokenType.RPAREN);
+        }
+
         if (this.checkKeyword('PRIMARY')) {
           this.advance();
           this.expect(TokenType.KEYWORD, 'KEY');
@@ -482,7 +488,7 @@ class Parser {
     };
   }
 
-  // WHERE col = value  |  WHERE col BETWEEN val1 AND val2
+  // WHERE col = value | col != value | col < value | col <= value | col > value | col >= value | col BETWEEN val AND val
   parseCondition() {
     const column = this.parseIdentifierPath();
 
@@ -490,6 +496,36 @@ class Parser {
       this.advance();
       const value = this._parseValue();
       return { type: 'EQUALS', column, value };
+    }
+
+    if (this.check(TokenType.NEQ)) {
+      this.advance();
+      const value = this._parseValue();
+      return { type: 'NEQ', column, value };
+    }
+
+    if (this.check(TokenType.LT)) {
+      this.advance();
+      const value = this._parseValue();
+      return { type: 'LT', column, value };
+    }
+
+    if (this.check(TokenType.LTE)) {
+      this.advance();
+      const value = this._parseValue();
+      return { type: 'LTE', column, value };
+    }
+
+    if (this.check(TokenType.GT)) {
+      this.advance();
+      const value = this._parseValue();
+      return { type: 'GT', column, value };
+    }
+
+    if (this.check(TokenType.GTE)) {
+      this.advance();
+      const value = this._parseValue();
+      return { type: 'GTE', column, value };
     }
 
     if (this.checkKeyword('BETWEEN')) {
@@ -501,7 +537,7 @@ class Parser {
     }
 
     throw this._error(
-      `Expected '=' or 'BETWEEN' after column '${column}', got '${this.peek().value}'`,
+      `Expected a comparison operator or 'BETWEEN' after column '${column}', got '${this.peek().value}'`,
       this.peek()
     );
   }

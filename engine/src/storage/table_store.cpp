@@ -93,6 +93,32 @@ bool rowMatchesFilter(const nlohmann::json& row, const nlohmann::json& filter) {
         return betweenValue(row[column], filter["start"], filter["end"]);
     }
 
+    if (op == ">" || op == "<" || op == ">=" || op == "<=" || op == "!=") {
+        if (!filter.contains("value")) {
+            return false;
+        }
+
+        const nlohmann::json& left = row[column];
+        const nlohmann::json& right = filter["value"];
+
+        if (op == "!=") return !equalsValue(left, right);
+
+        double dl = 0, dr = 0;
+        if (tryParseNumber(left, dl) && tryParseNumber(right, dr)) {
+            if (op == ">") return dl > dr;
+            if (op == "<") return dl < dr;
+            if (op == ">=") return dl >= dr;
+            if (op == "<=") return dl <= dr;
+        }
+
+        std::string sl = comparableString(left);
+        std::string sr = comparableString(right);
+        if (op == ">") return sl > sr;
+        if (op == "<") return sl < sr;
+        if (op == ">=") return sl >= sr;
+        if (op == "<=") return sl <= sr;
+    }
+
     return false;
 }
 

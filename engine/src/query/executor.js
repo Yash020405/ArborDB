@@ -184,6 +184,22 @@ function buildSelect(ast, schemaMap) {
       };
     }
 
+    case 'GT':
+    case 'LT':
+    case 'GTE':
+    case 'LTE':
+    case 'NEQ': {
+      return {
+        operation: 'full_scan',
+        table: ast.table,
+        filter: {
+          column: condition.column,
+          operator: { GT: '>', LT: '<', GTE: '>=', LTE: '<=', NEQ: '!=' }[condition.type],
+          value: condition.value,
+        },
+      };
+    }
+
     default:
       throw new Error(`Unsupported condition type: ${condition.type}`);
   }
@@ -232,6 +248,14 @@ function buildFilterFromCondition(condition) {
       operator: 'BETWEEN',
       start: condition.start,
       end: condition.end,
+    };
+  }
+
+  if (['GT', 'LT', 'GTE', 'LTE', 'NEQ'].includes(condition.type)) {
+    return {
+      column: condition.column,
+      operator: { GT: '>', LT: '<', GTE: '>=', LTE: '<=', NEQ: '!=' }[condition.type],
+      value: condition.value,
     };
   }
 

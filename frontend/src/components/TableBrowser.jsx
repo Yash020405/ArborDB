@@ -42,6 +42,7 @@ export default function TableBrowser() {
   // Upload State
   const [uploadFile, setUploadFile] = useState(null);
   const [uploadTable, setUploadTable] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
 
   // Data Viewer State
   const [selectedTable, setSelectedTable] = useState(null);
@@ -149,6 +150,7 @@ export default function TableBrowser() {
     formData.append('file', uploadFile);
     formData.append('table', uploadTable);
 
+    setIsUploading(true);
     try {
       const res = await axios.post('/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
@@ -157,6 +159,8 @@ export default function TableBrowser() {
       setTimeout(() => { fetchTables(); closeModal(); }, 2000);
     } catch (err) {
       handleAlert(err);
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -344,8 +348,10 @@ export default function TableBrowser() {
           </div>
 
           <div className="pt-4 border-t flex justify-end gap-2">
-            <Button variant="outline" onClick={closeModal} disabled={!!successMsg}>Cancel</Button>
-            <Button onClick={submitUpload} disabled={!!successMsg}>Upload & Ingest</Button>
+            <Button variant="outline" onClick={closeModal} disabled={!!successMsg || isUploading}>Cancel</Button>
+            <Button onClick={submitUpload} disabled={!!successMsg || isUploading}>
+                {isUploading ? "Loading..." : "Upload & Ingest"}
+            </Button>
           </div>
         </div>
       </Modal>

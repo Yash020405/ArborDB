@@ -191,8 +191,6 @@ Latest full evaluation snapshot (2026-04-05):
 
 `POST /query` now emits stage-specific, stable error codes. Here is the query lifecycle:
 
-```mermaid
-
 | Stage | HTTP | Error Code | Meaning |
 | --- | ---: | --- | --- |
 | Request validation | 400 | `QUERY_VALIDATION_ERROR` | Invalid/missing SQL payload |

@@ -13,15 +13,17 @@ The project emphasizes predictable query behavior, index-aware execution, and te
 - Observability: per-query metrics, recent query feed, aggregate engine/API metrics
 - Persistence: native table/schema/WAL artifacts on disk
 
+## Demo Video - [Click here]()
+
 ## Architecture
 
-```text
-Frontend / CLI
-  -> API routes (/query, /upload, /tables, /metrics)
-  -> SQL pipeline (tokenize -> parse -> plan -> execute)
-  -> Native engine bridge
-  -> C++ engine (B+ tree + storage + schema + WAL)
-  -> Disk persistence (data/tables)
+```mermaid
+graph TD
+    Client["Frontend / CLI"] --> API["API routes<br/>(/query, /upload, /tables, /metrics)"]
+    API --> SQL["SQL pipeline<br/>(tokenize -> parse -> plan -> execute)"]
+    SQL --> Bridge["Native engine bridge"]
+    Bridge --> Engine["C++ engine<br/>(B+ tree + storage + schema + WAL)"]
+    Engine --> Disk[("Disk persistence<br/>(data/tables)")]
 ```
 
 ## Setup Instructions
@@ -32,75 +34,54 @@ Frontend / CLI
 - npm 9+
 - g++ with C++17 support
 
-### Fast Setup (Recommended)
+### 1. Build and Install Dependencies
 
 ```bash
 ./scripts/bootstrap.sh setup
 ```
 
-### Full Local Run
+### 2. Run Local Services
 
-Terminal 1:
+Terminal 1 (API):
 
 ```bash
 ./scripts/bootstrap.sh api
 ```
 
-Terminal 2:
+Terminal 2 (Frontend React App):
 
 ```bash
 ./scripts/bootstrap.sh frontend
 ```
 
-Terminal 3 (optional):
+Terminal 3 (optional CLI):
 
 ```bash
 ./scripts/bootstrap.sh cli
 ```
 
-### Manual Setup (If You Need Fine Control)
-
-Build native engine:
+### Example `.env` Variables
 
 ```bash
-cd engine
-mkdir -p build
-g++ -std=c++17 -O2 \
-  -I./vendor -I./src \
-  main.cpp \
-  src/engine.cpp \
-  src/wal.cpp \
-  src/disk/pager.cpp \
-  src/schema/schema.cpp \
-  src/storage/btree.cpp \
-  src/storage/secondary_index.cpp \
-  src/storage/serializer.cpp \
-  src/storage/table_store.cpp \
-  -o build/engine
+ENGINE_PATH=../engine/build/engine
+DATA_DIR=../data
 ```
 
-Install dependencies:
+*Note: The API uses a persistent native worker by default
 
-```bash
-cd ../api && npm install
-cd ../frontend && npm install
-cd ../cli && npm install
+## User Flow
+
+```mermaid
+graph TD
+    s1[1. Initialize services] --> s2[2. Validate health & metrics]
+    s2 --> s3[3. Create tables & indexes]
+    s3 --> s4[4. Load data / upload CSV]
+    s4 --> s5[5. Run queries]
+    s5 --> s6[6. Review optimizer strategy]
+    s6 --> s7[7. Track latencies]
+    s7 --> s8[8. Evolve schema]
+    s8 --> s9[9. Full validation gate]
 ```
-
-Optional API environment:
-
-```bash
-cd ../api
-cp .env.example .env
-```
-
-Important API env variables:
-
-- `ENGINE_PATH=../engine/build/engine`
-- `DATA_DIR=../data`
-- The API uses a persistent native worker by default (no per-query process spawn).
-
-## Professional User Flow
 
 1. Initialize services.
 2. Validate health (`GET /health`) and confirm engine type via `GET /metrics`.
@@ -206,9 +187,33 @@ Latest full evaluation snapshot (2026-04-05):
 | `non_index_scan_filter` | `full_scan_filter` | 10 | 11 | 15.73 | 17.91 | 71.43% | 62.44% |
 | `order_by_limit` | `advanced_select` | 20 | 25 | 23.87 | 31.66 | 67.74% | 66.65% |
 
-## Query Error Taxonomy (Hardened)
+## Query Error Taxonomy
 
-`POST /query` now emits stage-specific, stable error codes:
+`POST /query` now emits stage-specific, stable error codes. Here is the query lifecycle:
+
+```mermaid
+graph TD
+    Incoming[Incoming SQL] --> Validator{Validation}
+    Validator -- Missing Payload --> E1[400 QUERY_VALIDATION_ERROR]
+    Validator -- Valid --> Tokenizer{Tokenization}
+    
+    Tokenizer -- Lexical Fail --> E2[400 QUERY_TOKENIZE_ERROR]
+    Tokenizer -- Tokens --> Parser{Parsing}
+    
+    Parser -- Syntax Fail --> E3[400 QUERY_PARSE_ERROR]
+    Parser -- AST --> Planner{Planning}
+    
+    Planner -- Translation Fail --> E4[422 QUERY_PLAN_ERROR]
+    Planner -- Plan --> QueryLayer{Execution}
+    
+    QueryLayer -- Core Fail --> E5[500 QUERY_EXECUTION_ERROR]
+    QueryLayer -- Native Call --> Native{C++ Engine}
+    
+    Native -- Timeout --> E6[504 ENGINE_TIMEOUT]
+    Native -- Ops Error --> E7[502 ENGINE_OPERATION_FAILED]
+    Native -- JSON Parse --> E8[502 ENGINE_PARSE_ERROR]
+    Native -- No Binary --> E9[500 ENGINE_NOT_FOUND]
+```
 
 | Stage | HTTP | Error Code | Meaning |
 | --- | ---: | --- | --- |
@@ -235,30 +240,6 @@ All error responses follow:
 }
 ```
 
-## Pre-Commit Validation (Required)
-
-Single command:
-
-```bash
-./scripts/bootstrap.sh check
-```
-
-This runs:
-
-- API lint
-- CLI lint
-- Frontend lint
-- Native engine build
-- API test suite (`--runInBand`)
-- Frontend production build
-
-Targeted checks used frequently during query work:
-
-```bash
-cd api
-npm test -- --runInBand tests/error-handling.test.js tests/api.test.js tests/metrics-consistency.test.js
-```
-
 ## API Endpoints
 
 - `POST /query` execute SQL
@@ -271,13 +252,14 @@ npm test -- --runInBand tests/error-handling.test.js tests/api.test.js tests/met
 
 ## Repository Layout
 
-```text
-api/        Express API, query pipeline, upload services, tests
-cli/        Interactive CLI client
-engine/     C++ engine and JS query planner/parser modules
-frontend/   React UI (console, browser, metrics dashboard)
-data/       Table/schema/WAL artifacts
-scripts/    Bootstrap and cross-project dev helpers
+```mermaid
+graph LR
+    Root[ArborDB] --> api[api/<br/>Express API, logic & tests]
+    Root --> cli[cli/<br/>Interactive terminal client]
+    Root --> engine[engine/<br/>C++ storage & JS planner]
+    Root --> frontend[frontend/<br/>React UI console]
+    Root --> data[(data/<br/>Tables, schema, WAL)]
+    Root --> scripts[scripts/<br/>Bootstrap logic]
 ```
 
 ## License

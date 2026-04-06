@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Play, Activity, FastForward } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -7,7 +7,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 
 export default function SqlConsole() {
-  const [sql, setSql] = useState('SELECT * FROM users;\n');
+  const [sql, setSql] = useState(() => {
+    return localStorage.getItem('arbordb_sql') || 'SELECT * FROM users;\n';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('arbordb_sql', sql);
+  }, [sql]);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);

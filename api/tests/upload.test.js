@@ -3,10 +3,11 @@
 const fs = require('fs');
 const path = require('path');
 const request = require('supertest');
+const XLSX = require('xlsx');
 const { createApp } = require('../src/app');
 const engine = require('../src/engine');
 const metricsService = require('../src/services/metrics');
-const { parseCSV } = require('../src/services/fileParser');
+const { parseCSV, parseExcel, parseFile } = require('../src/services/fileParser');
 
 let app;
 let tempDataDir;
@@ -81,6 +82,48 @@ describe('File Upload', () => {
 
     test('throws on empty CSV', () => {
       expect(() => parseCSV(Buffer.from(''))).toThrow();
+    });
+
+    test('throws on CSV field mismatch', () => {
+      const csv = 'id,name\n1,Alice,extra';
+      expect(() => parseCSV(Buffer.from(csv))).toThrow('CSV parsing failed');
+    });
+  });
+
+  describe('Excel Parsing (Unit)', () => {
+    test('throws when workbook has no sheets', () => {
+      const readSpy = jest.spyOn(XLSX, 'read').mockReturnValue({
+        SheetNames: [],
+        Sheets: {},
+      });
+
+      try {
+        expect(() => parseExcel(Buffer.from('irrelevant'))).toThrow('Excel file contains no sheets');
+      } finally {
+        readSpy.mockRestore();
+      }
+    });
+
+    test('throws when requested sheet is missing', () => {
+      const workbook = XLSX.utils.book_new();
+      const sheet = XLSX.utils.aoa_to_sheet([['id', 'name'], [1, 'Alice']]);
+      XLSX.utils.book_append_sheet(workbook, sheet, 'Sheet1');
+      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+      expect(() => parseExcel(buffer, { sheetName: 'MissingSheet' })).toThrow("Sheet 'MissingSheet' not found");
+    });
+
+    test('throws when sheet has no rows', () => {
+      const workbook = XLSX.utils.book_new();
+      const sheet = XLSX.utils.aoa_to_sheet([['id', 'name']]);
+      XLSX.utils.book_append_sheet(workbook, sheet, 'Sheet1');
+      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+      expect(() => parseExcel(buffer)).toThrow('Excel sheet is empty or contains no valid data');
+    });
+
+    test('throws for unsupported file extension in parseFile', () => {
+      expect(() => parseFile(Buffer.from('data'), 'sample.json')).toThrow('Unsupported file format: .json');
     });
   });
 

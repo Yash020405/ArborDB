@@ -15,7 +15,7 @@ router.get('/', async (req, res, next) => {
       try {
         const result = await engine.callEngine({ operation: 'full_scan', table: t.name });
         t.rowCount = result.rows ? result.rows.length : 0;
-      } catch (err) {
+      } catch {
         t.rowCount = 0;
       }
     }
@@ -37,7 +37,7 @@ router.get('/:name', async (req, res, next) => {
     try {
       const result = await engine.callEngine({ operation: 'full_scan', table: name });
       tableInfo.rowCount = result.rows ? result.rows.length : 0;
-    } catch (err) {
+    } catch {
       tableInfo.rowCount = 0;
     }
 

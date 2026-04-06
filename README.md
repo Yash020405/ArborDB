@@ -174,7 +174,7 @@ It emits percentile stats (`avg`, `p50`, `p95`, `p99`, `max`) for:
 
 Use `cache_effect` to quantify in-memory cache gains for hot query paths.
 
-Latest full evaluation snapshot (2026-04-05):
+Latest full evaluation snapshot:
 
 - Runtime: 20.99 seconds
 - Dataset: 1500 rows (`bench_users`)
@@ -238,6 +238,3 @@ graph LR
     Root --> scripts[scripts/<br/>Bootstrap logic]
 ```
 
-## License
-
-MIT

@@ -9,6 +9,11 @@ const TokenType = Object.freeze({
   NUMBER:       'NUMBER',
   STRING:       'STRING',
   EQUALS:       'EQUALS',
+  NEQ:          'NEQ',
+  LT:           'LT',
+  LTE:          'LTE',
+  GT:           'GT',
+  GTE:          'GTE',
   STAR:         'STAR',
   LPAREN:       'LPAREN',
   RPAREN:       'RPAREN',
@@ -211,6 +216,33 @@ function tokenize(sql) {
         break;
       case '=':
         tokens.push(createToken(TokenType.EQUALS, '=', pos, line, column));
+        break;
+      case '!':
+        if (pos + 1 < len && sql[pos + 1] === '=') {
+          tokens.push(createToken(TokenType.NEQ, '!=', pos, line, column));
+          pos++;
+          column++;
+        } else {
+          throw new Error(`Unexpected character '!' at line ${line}, column ${column}`);
+        }
+        break;
+      case '<':
+        if (pos + 1 < len && sql[pos + 1] === '=') {
+          tokens.push(createToken(TokenType.LTE, '<=', pos, line, column));
+          pos++;
+          column++;
+        } else {
+          tokens.push(createToken(TokenType.LT, '<', pos, line, column));
+        }
+        break;
+      case '>':
+        if (pos + 1 < len && sql[pos + 1] === '=') {
+          tokens.push(createToken(TokenType.GTE, '>=', pos, line, column));
+          pos++;
+          column++;
+        } else {
+          tokens.push(createToken(TokenType.GT, '>', pos, line, column));
+        }
         break;
       case '*':
         tokens.push(createToken(TokenType.STAR, '*', pos, line, column));

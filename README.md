@@ -13,7 +13,7 @@ The project emphasizes predictable query behavior, index-aware execution, and te
 - Observability: per-query metrics, recent query feed, aggregate engine/API metrics
 - Persistence: native table/schema/WAL artifacts on disk
 
-## Demo Video - [Click here]()
+## Demo Video - [Click here](https://www.loom.com/share/b1f7afce53ac44f988fb2ba9cc063227)
 
 ## Architecture
 

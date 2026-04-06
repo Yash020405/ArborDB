@@ -27,7 +27,9 @@ router.get('/', (req, res) => {
 });
 
 router.get('/recent', (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit || '50', 10), 100);
+  const parsedLimit = parseInt(req.query.limit || '50', 10);
+  const safeLimit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 50;
+  const limit = Math.min(safeLimit, 100);
   const recentQueries = metricsService.getRecentQueries(limit);
   res.json({ status: 'ok', queries: recentQueries, count: recentQueries.length });
 });

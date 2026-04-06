@@ -12,7 +12,7 @@ ColumnType parseColumnType(const std::string& s) {
     if (s == "INT")    return ColumnType::INT;
     if (s == "STRING") return ColumnType::STRING;
     if (s == "FLOAT")  return ColumnType::FLOAT;
-    if (s == "BOOL")   return ColumnType::BOOL;
+    if (s == "BOOL" || s == "BOOLEAN") return ColumnType::BOOL;
     throw std::invalid_argument("Unknown column type: " + s);
 }
 

@@ -70,6 +70,28 @@ describe('API Endpoints', () => {
       expect(res.body.query.table).toBe('users');
     });
 
+    test('supports BOOLEAN column type aliases end-to-end', async () => {
+      const createRes = await request(app)
+        .post('/query')
+        .send({ sql: 'CREATE TABLE feature_flags (id INT PRIMARY KEY, enabled BOOLEAN)' });
+
+      expect(createRes.status).toBe(200);
+
+      const insertRes = await request(app)
+        .post('/query')
+        .send({ sql: 'INSERT INTO feature_flags VALUES (1, true)' });
+
+      expect(insertRes.status).toBe(200);
+
+      const selectRes = await request(app)
+        .post('/query')
+        .send({ sql: 'SELECT * FROM feature_flags WHERE id = 1' });
+
+      expect(selectRes.status).toBe(200);
+      expect(selectRes.body.result.rowCount).toBe(1);
+      expect(selectRes.body.result.rows[0].enabled).toBe(true);
+    });
+
     test('executes INSERT', async () => {
       // Create table first
       await request(app)
@@ -466,6 +488,44 @@ describe('API Endpoints', () => {
       const res = await request(app).get('/tables/nonexistent');
       expect(res.status).toBe(404);
       expect(res.body.error.code).toBe('NOT_FOUND');
+    });
+
+    test('falls back to rowCount 0 when full_scan fails during list', async () => {
+      await request(app)
+        .post('/query')
+        .send({ sql: 'CREATE TABLE fallback_list (id INT, name STRING)' });
+
+      const callEngineSpy = jest
+        .spyOn(engine, 'callEngine')
+        .mockRejectedValue(new Error('forced full scan failure'));
+
+      try {
+        const res = await request(app).get('/tables');
+        expect(res.status).toBe(200);
+        expect(res.body.tables).toHaveLength(1);
+        expect(res.body.tables[0].rowCount).toBe(0);
+      } finally {
+        callEngineSpy.mockRestore();
+      }
+    });
+
+    test('falls back to rowCount 0 when full_scan fails during get-by-name', async () => {
+      await request(app)
+        .post('/query')
+        .send({ sql: 'CREATE TABLE fallback_single (id INT, name STRING)' });
+
+      const callEngineSpy = jest
+        .spyOn(engine, 'callEngine')
+        .mockRejectedValue(new Error('forced full scan failure'));
+
+      try {
+        const res = await request(app).get('/tables/fallback_single');
+        expect(res.status).toBe(200);
+        expect(res.body.table.name).toBe('fallback_single');
+        expect(res.body.table.rowCount).toBe(0);
+      } finally {
+        callEngineSpy.mockRestore();
+      }
     });
   });
 

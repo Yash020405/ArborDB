@@ -5,9 +5,15 @@
 
 const { ArborDBError } = require('../errors');
 
+function shouldLogInCurrentEnv() {
+  return process.env.NODE_ENV !== 'test' || process.env.ARBORDB_TEST_LOGS === '1';
+}
+
 function errorHandler(err, req, res, _next) {
   if (err instanceof ArborDBError) {
-    console.error(`[ArborDB Error] ${err.errorCode}: ${err.message}`);
+    if (shouldLogInCurrentEnv()) {
+      console.error(`[ArborDB Error] ${err.errorCode}: ${err.message}`);
+    }
     return res.status(err.statusCode).json(err.toJSON());
   }
 
@@ -44,7 +50,9 @@ function errorHandler(err, req, res, _next) {
   }
 
   // Fallback
-  console.error('[Unhandled Error]', err.message);
+  if (shouldLogInCurrentEnv()) {
+    console.error('[Unhandled Error]', err.message);
+  }
   const statusCode = err.statusCode || err.status || 500;
   return res.status(statusCode).json({
     error: {

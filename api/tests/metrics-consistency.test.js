@@ -87,4 +87,38 @@ describe('Metrics and Consistency', () => {
     expect(metricsResponse.body.metrics.breakdown.selects).toBeGreaterThanOrEqual(2);
     expect(metricsResponse.body.engine.tablesCount).toBe(1);
   });
+
+  test('clamps /metrics/recent limit to 100', async () => {
+    const getRecentQueriesSpy = jest
+      .spyOn(metricsService, 'getRecentQueries')
+      .mockReturnValue([]);
+
+    try {
+      const response = await request(app)
+        .get('/metrics/recent?limit=999')
+        .expect(200);
+
+      expect(response.body.status).toBe('ok');
+      expect(getRecentQueriesSpy).toHaveBeenCalledWith(100);
+    } finally {
+      getRecentQueriesSpy.mockRestore();
+    }
+  });
+
+  test('uses default /metrics/recent limit when input is invalid', async () => {
+    const getRecentQueriesSpy = jest
+      .spyOn(metricsService, 'getRecentQueries')
+      .mockReturnValue([]);
+
+    try {
+      const response = await request(app)
+        .get('/metrics/recent?limit=not-a-number')
+        .expect(200);
+
+      expect(response.body.status).toBe('ok');
+      expect(getRecentQueriesSpy).toHaveBeenCalledWith(50);
+    } finally {
+      getRecentQueriesSpy.mockRestore();
+    }
+  });
 });

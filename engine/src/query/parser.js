@@ -552,8 +552,17 @@ class Parser {
       this.advance();
       return token.value;
     }
+    if (token.type === TokenType.KEYWORD && (token.value === 'TRUE' || token.value === 'FALSE')) {
+      this.advance();
+      return token.value === 'TRUE';
+    }
     if (token.type === TokenType.IDENTIFIER) {
       this.advance();
+      if (typeof token.value === 'string') {
+        const lowered = token.value.toLowerCase();
+        if (lowered === 'true') return true;
+        if (lowered === 'false') return false;
+      }
       return token.value;
     }
     if (token.type === TokenType.KEYWORD && token.value === 'NULL') {

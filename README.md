@@ -192,28 +192,6 @@ Latest full evaluation snapshot (2026-04-05):
 `POST /query` now emits stage-specific, stable error codes. Here is the query lifecycle:
 
 ```mermaid
-graph TD
-    Incoming[Incoming SQL] --> Validator{Validation}
-    Validator -- Missing Payload --> E1[400 QUERY_VALIDATION_ERROR]
-    Validator -- Valid --> Tokenizer{Tokenization}
-    
-    Tokenizer -- Lexical Fail --> E2[400 QUERY_TOKENIZE_ERROR]
-    Tokenizer -- Tokens --> Parser{Parsing}
-    
-    Parser -- Syntax Fail --> E3[400 QUERY_PARSE_ERROR]
-    Parser -- AST --> Planner{Planning}
-    
-    Planner -- Translation Fail --> E4[422 QUERY_PLAN_ERROR]
-    Planner -- Plan --> QueryLayer{Execution}
-    
-    QueryLayer -- Core Fail --> E5[500 QUERY_EXECUTION_ERROR]
-    QueryLayer -- Native Call --> Native{C++ Engine}
-    
-    Native -- Timeout --> E6[504 ENGINE_TIMEOUT]
-    Native -- Ops Error --> E7[502 ENGINE_OPERATION_FAILED]
-    Native -- JSON Parse --> E8[502 ENGINE_PARSE_ERROR]
-    Native -- No Binary --> E9[500 ENGINE_NOT_FOUND]
-```
 
 | Stage | HTTP | Error Code | Meaning |
 | --- | ---: | --- | --- |

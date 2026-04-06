@@ -42,7 +42,12 @@ export default function SqlConsole() {
 
     // If no text is highlighted, find the statement under the cursor
     if (!queryToRun.trim()) {
-      const cursor = el.selectionStart;
+      let cursor = el.selectionStart;
+
+      while (cursor > 0 && /[\\s;]/.test(sql[cursor - 1])) {
+        cursor--;
+      }
+
       const beforeCursor = sql.substring(0, cursor);
       const afterCursor = sql.substring(cursor);
       

@@ -26,6 +26,47 @@ graph TD
     Engine --> Disk[("Disk persistence<br/>(data/tables)")]
 ```
 
+### Data Insertion Flow
+
+```mermaid
+sequenceDiagram
+    participant C as Client (UI / CLI)
+    participant A as API Server
+    participant E as JS Engine Bridge
+    participant CPP as Native C++ Engine
+    participant D as Disk (WAL / DB)
+
+    C->>A: POST /query (INSERT) or /upload
+    A->>E: Parse & Plan query
+    E->>CPP: Invoke native operation
+    CPP->>D: Append to Write-Ahead Log (WAL)
+    CPP->>CPP: Update B+ Tree & Secondary Indexes
+    CPP-->>E: Return success metrics
+    E-->>A: Format response
+    A-->>C: Return HTTP 200 (rows affected)
+```
+
+### Query Execution Flow
+
+```mermaid
+sequenceDiagram
+    participant C as Client (UI / CLI)
+    participant A as API Server
+    participant P as Planner / Optimizer
+    participant CPP as Native C++ Engine
+    participant D as Disk (DB Files)
+
+    C->>A: POST /query (SELECT ...)
+    A->>P: Tokenize & Parse AST
+    P->>P: Select execution strategy
+    P->>CPP: Execute command (Index vs Full Scan)
+    CPP->>D: Read memory-mapped pages
+    CPP->>CPP: Filter, Aggregate & Sort
+    CPP-->>P: Return result rows
+    P-->>A: Attach optimization metrics
+    A-->>C: Return formatted JSON
+```
+
 ## Setup Instructions
 
 ### Prerequisites
@@ -80,7 +121,6 @@ graph TD
     s5 --> s6[6. Review optimizer strategy]
     s6 --> s7[7. Track latencies]
     s7 --> s8[8. Evolve schema]
-    s8 --> s9[9. Full validation gate]
 ```
 
 1. Initialize services.
@@ -91,7 +131,6 @@ graph TD
 6. Use optimizer feedback (`response.optimization.strategy`) to verify index usage.
 7. Track latency/traversal behavior in `response.metrics` and aggregate counters from `GET /metrics`.
 8. Evolve schema safely: add/drop indexes and re-check strategy + metrics.
-9. Before release, execute the full validation gate (`./scripts/bootstrap.sh check`).
 
 ## Query Examples
 

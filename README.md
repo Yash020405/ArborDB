@@ -67,6 +67,31 @@ sequenceDiagram
     A-->>C: Return formatted JSON
 ```
 
+## Deployment on Kubernetes
+
+ArborDB runs on a local kind cluster, deployed with a Helm chart and a GitHub Actions pipeline.
+
+```mermaid
+graph LR
+    User[Browser] -->|HTTPS arbordb.localhost| Ingress[ingress-nginx<br/>TLS termination]
+    Ingress -->|/| FE[frontend Deployment<br/>nginx, 2 pods]
+    Ingress -->|/api/*| API[arbordb-api-0<br/>StatefulSet, Node API + C++ engine]
+    API --> PVC[(PVC<br/>tables + WAL)]
+    Prom[Prometheus] -->|/metrics/prometheus| API
+    Prom --> Graf[Grafana dashboard + alerts]
+
+    Dev[git push] --> CI[GitHub Actions<br/>tests, scans, build]
+    CI -->|image tagged with commit SHA| GHCR[(ghcr.io)]
+    GHCR --> Runner[self-hosted runner<br/>after manual approval]
+    Runner -->|helm upgrade --atomic| API
+    Runner --> FE
+```
+
+- Project report: [docs/REPORT.md](docs/REPORT.md)
+- Run instructions: [docs/RUNNING.md](docs/RUNNING.md)
+- Alert runbook: [docs/RUNBOOK.md](docs/RUNBOOK.md)
+- Evidence: [docs/EVIDENCE.md](docs/EVIDENCE.md)
+
 ## Setup Instructions
 
 ### Prerequisites
@@ -263,7 +288,9 @@ All error responses follow:
 - `GET /tables/:name` get table details
 - `GET /metrics` aggregate metrics and engine summary
 - `GET /metrics/recent` recent query history
-- `GET /health` health/status check
+- `GET /health` liveness check, includes the running version
+- `GET /ready` readiness check (data directory writable)
+- `GET /metrics/prometheus` Prometheus metrics
 
 ## Repository Layout
 
@@ -274,6 +301,8 @@ graph LR
     Root --> engine[engine/<br/>C++ storage & JS planner]
     Root --> frontend[frontend/<br/>React UI console]
     Root --> data[(data/<br/>Tables, schema, WAL)]
-    Root --> scripts[scripts/<br/>Bootstrap logic]
+    Root --> scripts[scripts/<br/>Bootstrap, cluster setup, verify]
+    Root --> deploy[deploy/<br/>Helm chart, kind config, RBAC]
+    Root --> gh[.github/workflows/<br/>CI/CD pipeline]
 ```
 

@@ -1,0 +1,5 @@
+ingress:
+  host: arbordb.localhost
+api:
+  config:
+    CORS_ORIGIN: https://arbordb.localhost

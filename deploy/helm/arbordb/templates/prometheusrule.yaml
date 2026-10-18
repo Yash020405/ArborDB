@@ -1,0 +1,45 @@
+{{- if and .Values.monitoring.prometheusRule (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1") }}
+# SLO: 99% of user requests succeed (non-5xx) and p95 latency stays under 500ms.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: arbordb-api
+  labels:
+    {{- include "arbordb.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: arbordb-api
+      rules:
+        # user traffic only: probe and scrape routes are left out
+        - record: arbordb:http_requests:rate5m
+          expr: sum by (route, status_code) (rate(http_request_duration_seconds_count{job="arbordb-api",route!~"/health|/ready|/metrics/prometheus"}[5m]))
+        - record: arbordb:error_ratio:rate5m
+          expr: (sum(arbordb:http_requests:rate5m{status_code=~"5.."}) or vector(0)) / sum(arbordb:http_requests:rate5m)
+        - record: arbordb:latency_p95:5m
+          expr: histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{job="arbordb-api",route!~"/health|/ready|/metrics/prometheus"}[5m])))
+
+        - alert: ArborDBApiDown
+          expr: up{job="arbordb-api"} == 0 or absent(up{job="arbordb-api"})
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: ArborDB API is not being scraped / is down
+            runbook_url: {{ .Values.monitoring.runbookBaseUrl }}#arbordbapidown
+        - alert: ArborDBHighErrorRate
+          expr: arbordb:error_ratio:rate5m > 0.01
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "More than 1% of API requests are failing ({{ "{{" }} $value | humanizePercentage {{ "}}" }})"
+            runbook_url: {{ .Values.monitoring.runbookBaseUrl }}#arbordbhigherrorrate
+        - alert: ArborDBHighLatency
+          expr: arbordb:latency_p95:5m > 0.5
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "API p95 latency is above 500ms ({{ "{{" }} $value | humanizeDuration {{ "}}" }})"
+            runbook_url: {{ .Values.monitoring.runbookBaseUrl }}#arbordbhighlatency
+{{- end }}

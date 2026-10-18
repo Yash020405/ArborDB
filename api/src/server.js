@@ -13,6 +13,18 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
 const app = createApp();
 
 const server = app.listen(PORT, () => {
+  if (NODE_ENV === 'production') {
+    console.log(JSON.stringify({
+      time: new Date().toISOString(),
+      level: 'info',
+      msg: 'server started',
+      port: PORT,
+      version: process.env.APP_VERSION || 'dev',
+      engine: engine.getExecutionMode(),
+    }));
+    return;
+  }
+
   console.log('');
   console.log('  ArborDB API Server');
   console.log('  ─────────────────────────────────────');

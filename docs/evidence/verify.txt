@@ -1,0 +1,31 @@
+== 1. Which version is running
+  helm release image tag : b2c9b60
+  git commit             : b2c9b60 docs: add deployment guide and runbook
+  POD                                IMAGE                                         READY   NODE
+  arbordb-api-0                      ghcr.io/yash020405/arbordb-api:b2c9b60        true    arbordb-worker
+  arbordb-frontend-56c49c879-6hq2m   ghcr.io/yash020405/arbordb-frontend:b2c9b60   true    arbordb-worker2
+  arbordb-frontend-56c49c879-cpmsm   ghcr.io/yash020405/arbordb-frontend:b2c9b60   true    arbordb-worker
+  /api/health            : {"status":"ok","service":"ArborDB API","version":"b2c9b60","timestamp":"2026-10-18T17:24:30.461Z","uptime":46.472087475}
+== 2. User journey through the HTTPS ingress
+  PASS  HTTP redirects to HTTPS
+  PASS  frontend served
+  running version: b2c9b60
+  query round trip OK
+  PASS  API reports b2c9b60 and a SQL insert + select works
+  PASS  frontend replicas spread over 2 nodes
+== 3. Data survives losing the API pod (StatefulSet + PVC)
+  PASS  row written before the restart is still there
+== 4. Security controls
+  PASS  namespace enforces Pod Security 'restricted'
+  PASS  API runs as non-root with read-only root filesystem
+  PASS  NetworkPolicy blocks pods outside ingress/monitoring namespaces
+  PASS  CI deployer is limited to the arbordb namespace
+== 5. Observability
+  PASS  Prometheus is scraping the API
+  PASS  Prometheus sees version b2c9b60
+  PASS  alert rules loaded: "name":"ArborDBApiDown" "name":"ArborDBHighErrorRate" "name":"ArborDBHighLatency" 
+  current alerts: 
+  sample API log line:
+    {"time":"2026-10-18T17:24:50.335Z","level":"info","requestId":"216e137f148ff1ef53381817e7da50c4","method":"GET","path":"/tables","status":200,"durationMs":4,"version":"b2c9b60"}
+
+RESULT: 12 passed, 0 failed

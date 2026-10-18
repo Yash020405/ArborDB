@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: arbordb-frontend
+  labels:
+    {{- include "arbordb.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: arbordb-frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

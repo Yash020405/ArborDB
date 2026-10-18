@@ -1,0 +1,41 @@
+$ helm history arbordb -n arbordb --max 6
+REVISION	UPDATED                 	STATUS    	CHART        	APP VERSION	DESCRIPTION                                        
+20      	Sun Oct 18 22:04:46 2026	superseded	arbordb-0.1.0	1.0.0      	Upgrade complete                                   
+21      	Sun Oct 18 22:05:53 2026	failed    	arbordb-0.1.0	1.0.0      	Upgrade "arbordb" failed: context deadline exceeded
+22      	Sun Oct 18 22:06:40 2026	failed    	arbordb-0.1.0	1.0.0      	Release "arbordb" failed: context deadline exceeded
+23      	Sun Oct 18 22:44:51 2026	deployed  	arbordb-0.1.0	1.0.0      	Upgrade complete                                   
+24      	Sun Oct 18 22:46:04 2026	failed    	arbordb-0.1.0	1.0.0      	Upgrade "arbordb" failed: context deadline exceeded
+25      	Sun Oct 18 22:46:51 2026	failed    	arbordb-0.1.0	1.0.0      	Release "arbordb" failed: context deadline exceeded
+
+$ kubectl -n arbordb get statefulset,deploy,pdb,pvc,svc,ingress,networkpolicy
+NAME                           READY   AGE
+statefulset.apps/arbordb-api   1/1     5h33m
+
+NAME                               READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/arbordb-frontend   2/2     2            2           5h33m
+
+NAME                                          MIN AVAILABLE   MAX UNAVAILABLE   ALLOWED DISRUPTIONS   AGE
+poddisruptionbudget.policy/arbordb-frontend   1               N/A               1                     5h33m
+
+NAME                                       STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+persistentvolumeclaim/data-arbordb-api-0   Bound    pvc-77f8d1df-5560-4a6a-9b76-4eb47da1840a   1Gi        RWO            standard       <unset>                 5h33m
+
+NAME                           TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)    AGE
+service/arbordb-api            ClusterIP   10.96.127.173   <none>        80/TCP     5h33m
+service/arbordb-api-headless   ClusterIP   None            <none>        3000/TCP   5h33m
+service/arbordb-frontend       ClusterIP   10.96.230.209   <none>        80/TCP     5h33m
+
+NAME                                         CLASS   HOSTS               ADDRESS     PORTS     AGE
+ingress.networking.k8s.io/arbordb-api        nginx   arbordb.localhost   localhost   80, 443   5h33m
+ingress.networking.k8s.io/arbordb-frontend   nginx   arbordb.localhost   localhost   80, 443   5h33m
+
+NAME                                                       POD-SELECTOR                                               AGE
+networkpolicy.networking.k8s.io/allow-ingress-controller   app.kubernetes.io/name in (arbordb-api,arbordb-frontend)   5h33m
+networkpolicy.networking.k8s.io/allow-prometheus-scrape    app.kubernetes.io/name=arbordb-api                         5h33m
+networkpolicy.networking.k8s.io/default-deny               <none>                                                     5h33m
+
+$ kubectl -n arbordb get pods -o wide
+NAME                               READY   STATUS    RESTARTS   AGE     IP            NODE              NOMINATED NODE   READINESS GATES
+arbordb-api-0                      1/1     Running   0          19s     10.244.1.71   arbordb-worker    <none>           <none>
+arbordb-frontend-56c49c879-6hq2m   1/1     Running   0          9m55s   10.244.2.20   arbordb-worker2   <none>           <none>
+arbordb-frontend-56c49c879-cpmsm   1/1     Running   0          9m57s   10.244.1.66   arbordb-worker    <none>           <none>

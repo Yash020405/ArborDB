@@ -1,0 +1,67 @@
+{
+  "title": "ArborDB",
+  "uid": "arbordb",
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "30s",
+  "panels": [
+    {
+      "title": "Running version",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "options": { "textMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/^version$/" } },
+      "targets": [{ "expr": "arbordb_build_info", "format": "table", "instant": true }]
+    },
+    {
+      "title": "Availability, last 5m (SLO 99%)",
+      "type": "stat",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 0.99 }] }
+        }
+      },
+      "targets": [{ "expr": "1 - arbordb:error_ratio:rate5m" }]
+    },
+    {
+      "title": "Pod restarts (1h)",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=\"arbordb\"}[1h]))" }]
+    },
+    {
+      "title": "API up",
+      "type": "stat",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "up{job=\"arbordb-api\"}" }]
+    },
+    {
+      "title": "Requests per second by route",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "targets": [{ "expr": "sum by (route) (arbordb:http_requests:rate5m)", "legendFormat": "{{route}}" }]
+    },
+    {
+      "title": "Error rate (5xx)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "percentunit" } },
+      "targets": [{ "expr": "arbordb:error_ratio:rate5m", "legendFormat": "error ratio" }]
+    },
+    {
+      "title": "Latency p95 (SLO 500ms)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [{ "expr": "arbordb:latency_p95:5m", "legendFormat": "p95" }]
+    },
+    {
+      "title": "Memory by pod",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "targets": [{ "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"arbordb\",container!=\"\"})", "legendFormat": "{{pod}}" }]
+    }
+  ]
+}

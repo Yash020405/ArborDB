@@ -1,0 +1,79 @@
+# StatefulSet with a single replica: the engine writes its tables and WAL to
+# local disk, so only one pod can own the data volume.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: arbordb-api
+  labels:
+    {{- include "arbordb.labels" . | nindent 4 }}
+    app.kubernetes.io/name: arbordb-api
+spec:
+  serviceName: arbordb-api-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: arbordb-api
+  template:
+    metadata:
+      labels:
+        {{- include "arbordb.labels" . | nindent 8 }}
+        app.kubernetes.io/name: arbordb-api
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/api-configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: arbordb
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "arbordb.podSecurityContext" . | nindent 8 }}
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: api
+          image: "{{ .Values.image.registry }}/{{ .Values.api.image }}:{{ include "arbordb.tag" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.api.port }}
+          envFrom:
+            - configMapRef:
+                name: arbordb-api
+          env:
+            - name: PORT
+              value: {{ .Values.api.port | quote }}
+            - name: DATA_DIR
+              value: /data
+            - name: APP_VERSION
+              value: {{ include "arbordb.tag" . | quote }}
+          # allow up to 60s for the engine to start before liveness takes over
+          startupProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          securityContext:
+            {{- include "arbordb.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.api.storage.storageClassName }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.api.storage.size }}

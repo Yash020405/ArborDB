@@ -1,0 +1,153 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main, "feature/**"]
+    paths-ignore: ["docs/**", "**.md"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io/yash020405
+
+jobs:
+  api:
+    name: API lint + tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+      - name: Build engine (API tests run against it)
+        run: make -C engine build/engine
+      - run: npm ci
+        working-directory: api
+      - run: npm run lint
+        working-directory: api
+      - run: npm test -- --runInBand
+        working-directory: api
+
+  engine:
+    name: Engine tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: make -C engine -j4 test
+
+  frontend:
+    name: Frontend lint + build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run lint
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+
+  security-scan:
+    name: Dependency + secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          skip-dirs: "**/node_modules"
+          exit-code: "1"
+
+  build:
+    name: Build, scan and push ${{ matrix.image }}
+    needs: [api, engine, frontend, security-scan]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - image: arbordb-api
+            dockerfile: api/Dockerfile
+            context: .
+          - image: arbordb-frontend
+            dockerfile: frontend/Dockerfile
+            context: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set image tag to the commit SHA
+        run: echo "TAG=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+      - name: Build
+        run: |
+          docker build -f ${{ matrix.dockerfile }} \
+            --build-arg APP_VERSION=$TAG \
+            -t $REGISTRY/${{ matrix.image }}:$TAG ${{ matrix.context }}
+      - name: Scan image (fail on fixable CRITICAL)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ matrix.image }}:${{ env.TAG }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Push
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_ACTOR: ${{ github.actor }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
+          docker push $REGISTRY/${{ matrix.image }}:$TAG
+
+  deploy:
+    name: Deploy to kind
+    needs: build
+    # runner on the machine that hosts the kind cluster; its KUBECONFIG points
+    # to the namespace-scoped deployer account (see docs/RUNNING.md)
+    runs-on: [self-hosted, arbordb-kind]
+    # the production environment requires a manual approval in GitHub
+    environment: production
+    concurrency: deploy
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set image tag to the commit SHA
+        run: echo "TAG=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+      - name: Pull images and load them into kind
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_ACTOR: ${{ github.actor }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
+          for img in arbordb-api arbordb-frontend; do
+            docker pull $REGISTRY/$img:$TAG
+            kind load docker-image --name arbordb $REGISTRY/$img:$TAG
+          done
+      - name: Helm upgrade (rolls back automatically if pods don't become ready)
+        run: |
+          helm upgrade --install arbordb deploy/helm/arbordb -n arbordb \
+            -f deploy/helm/arbordb/values-kind.yaml \
+            --set image.tag=$TAG \
+            --atomic --wait --timeout 5m
+      - name: Smoke test
+        run: ./scripts/smoke-test.sh "$TAG"
+      # Helm reverts the StatefulSet template on failure, but a pod that never
+      # became ready is not replaced automatically, so delete it here.
+      - name: Recover API pod after a failed release
+        if: failure()
+        run: |
+          kubectl -n arbordb rollout status sts/arbordb-api --timeout=10s \
+            || kubectl -n arbordb delete pod arbordb-api-0
+          kubectl -n arbordb rollout status sts/arbordb-api --timeout=120s

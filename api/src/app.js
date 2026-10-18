@@ -2,12 +2,15 @@
 
 // ArborDB Express application setup
 
+const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { errorHandler } = require('./middleware/errorHandler');
 const { requestLogger } = require('./middleware/requestLogger');
+const { metricsMiddleware, metricsHandler } = require('./middleware/prometheus');
+const engine = require('./engine');
 
 const queryRoutes = require('./routes/query');
 const uploadRoutes = require('./routes/upload');
@@ -16,6 +19,36 @@ const metricsRoutes = require('./routes/metrics');
 
 function createApp() {
   const app = express();
+
+  // Running behind the ingress, so take the client IP from X-Forwarded-For
+  app.set('trust proxy', 1);
+
+  app.use(requestLogger());
+  app.use(metricsMiddleware());
+
+  // Health and metrics routes go before the rate limiter, otherwise
+  // k8s probes and Prometheus scrapes would start getting 429s
+  app.get('/health', (_req, res) => {
+    res.json({
+      status: 'ok',
+      service: 'ArborDB API',
+      version: process.env.APP_VERSION || 'dev',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+    });
+  });
+
+  // Ready only if the data directory is writable
+  app.get('/ready', (_req, res) => {
+    try {
+      fs.accessSync(engine.getTablesDir(), fs.constants.W_OK);
+      res.json({ status: 'ready' });
+    } catch (err) {
+      res.status(503).json({ status: 'not_ready', reason: err.code || err.message });
+    }
+  });
+
+  app.get('/metrics/prometheus', metricsHandler);
 
   // Security
   app.use(helmet({ contentSecurityPolicy: false }));
@@ -46,19 +79,6 @@ function createApp() {
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
-  app.use(requestLogger());
-
-  // Health check
-  app.get('/health', (_req, res) => {
-    res.json({
-      status: 'ok',
-      service: 'ArborDB API',
-      version: '1.0.0',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-    });
-  });
-
   // Routes
   app.use('/query', queryRoutes);
   app.use('/upload', uploadRoutes);
@@ -78,7 +98,9 @@ function createApp() {
           'GET /tables/:name',
           'GET /metrics',
           'GET /metrics/recent',
+          'GET /metrics/prometheus',
           'GET /health',
+          'GET /ready',
         ],
       },
     });

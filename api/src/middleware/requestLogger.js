@@ -1,27 +1,31 @@
 'use strict';
 
-// Request logger middleware — logs method, path, status, and response time.
+// Logs each request as one JSON line with a request ID
+
+const crypto = require('crypto');
 
 function requestLogger() {
   return (req, res, next) => {
     const startTime = Date.now();
+    const requestId = req.get('x-request-id') || crypto.randomUUID();
+    req.id = requestId;
+    res.set('X-Request-ID', requestId);
 
-    const originalEnd = res.end;
-    res.end = function (...args) {
-      const duration = Date.now() - startTime;
-      const { method, path } = req;
+    res.on('finish', () => {
+      if (process.env.NODE_ENV === 'test' && process.env.ARBORDB_TEST_LOGS !== '1') return;
+
       const { statusCode } = res;
-
-      if (process.env.NODE_ENV === 'test' && process.env.ARBORDB_TEST_LOGS !== '1') {
-        originalEnd.apply(res, args);
-        return;
-      }
-
-      const logFn = statusCode >= 500 ? console.error : statusCode >= 400 ? console.warn : console.log;
-      logFn(`[${new Date().toISOString()}] ${method} ${path} → ${statusCode} (${duration}ms)`);
-
-      originalEnd.apply(res, args);
-    };
+      console.log(JSON.stringify({
+        time: new Date().toISOString(),
+        level: statusCode >= 500 ? 'error' : statusCode >= 400 ? 'warn' : 'info',
+        requestId,
+        method: req.method,
+        path: req.originalUrl,
+        status: statusCode,
+        durationMs: Date.now() - startTime,
+        version: process.env.APP_VERSION || 'dev',
+      }));
+    });
 
     next();
   };

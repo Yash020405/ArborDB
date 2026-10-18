@@ -66,7 +66,7 @@ function App() {
             'Database Metrics'
           }</h2>
           <div className="text-sm text-muted-foreground">
-            Connected: <span className="text-primary">localhost:3000</span>
+            Connected: <span className="text-primary">{axios.defaults.baseURL}</span>
           </div>
         </header>
 

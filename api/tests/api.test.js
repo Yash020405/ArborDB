@@ -54,6 +54,48 @@ describe('API Endpoints', () => {
       expect(res.status).toBe(200);
       expect(res.body.status).toBe('ok');
       expect(res.body.service).toBe('ArborDB API');
+      expect(res.body.version).toBeDefined();
+    });
+
+    test('is not rate limited (kubelet probes must never get 429)', async () => {
+      process.env.RATE_LIMIT_MAX_REQUESTS = '2';
+      const limitedApp = createApp();
+      process.env.RATE_LIMIT_MAX_REQUESTS = '1000';
+
+      for (let i = 0; i < 5; i++) {
+        const res = await request(limitedApp).get('/health');
+        expect(res.status).toBe(200);
+      }
+      const statuses = [];
+      for (let i = 0; i < 3; i++) {
+        statuses.push((await request(limitedApp).get('/tables')).status);
+      }
+      expect(statuses).toContain(429);
+    });
+
+    test('returns a request ID header', async () => {
+      const res = await request(app).get('/health').set('X-Request-ID', 'abc-123');
+      expect(res.headers['x-request-id']).toBe('abc-123');
+    });
+  });
+
+  describe('GET /ready', () => {
+    test('is ready when the data directory is writable', async () => {
+      const res = await request(app).get('/ready');
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('ready');
+    });
+  });
+
+  describe('GET /metrics/prometheus', () => {
+    test('exposes Prometheus text format with route labels', async () => {
+      await request(app).get('/tables');
+      const res = await request(app).get('/metrics/prometheus');
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toMatch(/text\/plain/);
+      expect(res.text).toContain('http_request_duration_seconds_bucket');
+      expect(res.text).toContain('route="/tables/"');
+      expect(res.text).toContain('arbordb_build_info');
     });
   });
 

@@ -150,6 +150,7 @@ function getExecutionMode() {
 
 module.exports = {
   callEngine,
+  getTablesDir,
   listTables,
   getTableInfo,
   getSchemaMap,

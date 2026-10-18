@@ -1,0 +1,16 @@
+Alert demo: stop the API and watch ArborDBApiDown go pending -> firing -> resolved
+22:50:49 state: no ArborDB alerts active
+22:50:49 $ kubectl -n arbordb scale statefulset arbordb-api --replicas=0
+statefulset.apps/arbordb-api scaled
+22:50:52 user request: /api/health -> 503
+22:50:52 state: no ArborDB alerts active
+22:51:42 state: ArborDBApiDown=pending
+22:53:43 state: ArborDBApiDown=firing
+22:53:43 Alertmanager received: [('ArborDBApiDown', 'critical', 'https://github.com/Yash020405/ArborDB/blob/main/docs/RUNBOOK.md#arbordbapidown')]
+22:53:43 $ kubectl -n arbordb scale statefulset arbordb-api --replicas=1   (runbook fix)
+statefulset.apps/arbordb-api scaled
+Waiting for 1 pods to be ready...
+partitioned roll out complete: 1 new pods have been updated...
+22:54:16 state: no ArborDB alerts active
+running version: b2c9b60
+query round trip OK

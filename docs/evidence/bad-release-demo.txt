@@ -1,0 +1,20 @@
+current good version: b2c9b60
+== watching availability (frontend/api status codes) during the bad release
+== deploying bad release does-not-exist
+200/200 200/504 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 200/503 Error: UPGRADE FAILED: an error occurred while rolling back the release. original upgrade error: context deadline exceeded: release arbordb failed: context deadline exceeded
+helm exit code: 1 (non-zero = release failed and was rolled back)
+== recovering API pod
+Waiting for 1 pods to be ready...
+200/503 200/503 
+error: timed out waiting for the condition
+pod "arbordb-api-0" deleted from arbordb namespace
+Waiting for 1 pods to be ready...
+partitioned roll out complete: 1 new pods have been updated...
+== release history
+REVISION	UPDATED                 	STATUS  	CHART        	APP VERSION	DESCRIPTION                                        
+22      	Sun Oct 18 22:06:40 2026	failed  	arbordb-0.1.0	1.0.0      	Release "arbordb" failed: context deadline exceeded
+23      	Sun Oct 18 22:44:51 2026	deployed	arbordb-0.1.0	1.0.0      	Upgrade complete                                   
+24      	Sun Oct 18 22:46:04 2026	failed  	arbordb-0.1.0	1.0.0      	Upgrade "arbordb" failed: context deadline exceeded
+25      	Sun Oct 18 22:46:51 2026	failed  	arbordb-0.1.0	1.0.0      	Release "arbordb" failed: context deadline exceeded
+running version: b2c9b60
+query round trip OK

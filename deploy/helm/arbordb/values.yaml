@@ -1,0 +1,45 @@
+image:
+  registry: ghcr.io/yash020405
+  # git commit SHA, set at deploy time
+  tag: ""
+  pullPolicy: IfNotPresent
+
+api:
+  image: arbordb-api
+  port: 3000
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+  storage:
+    size: 1Gi
+    storageClassName: ""
+  config:
+    NODE_ENV: production
+    MAX_FILE_SIZE_MB: "50"
+
+frontend:
+  image: arbordb-frontend
+  port: 8080
+  # fixed at 2 so the UI survives losing a node; static files don't need autoscaling
+  replicas: 2
+  resources:
+    requests: { cpu: 50m, memory: 32Mi }
+    limits: { cpu: 200m, memory: 64Mi }
+  pdb:
+    minAvailable: 1
+
+ingress:
+  className: nginx
+  host: arbordb.example.com
+  tlsSecretName: arbordb-tls   # created by scripts/setup-cluster.sh, not stored in git
+
+networkPolicy:
+  enabled: true
+  ingressNamespace: ingress-nginx
+  monitoringNamespace: monitoring
+
+monitoring:
+  serviceMonitor: true
+  prometheusRule: true
+  dashboard: true
+  runbookBaseUrl: https://github.com/Yash020405/ArborDB/blob/main/docs/RUNBOOK.md

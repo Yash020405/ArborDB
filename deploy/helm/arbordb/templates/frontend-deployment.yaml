@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: arbordb-frontend
+  labels:
+    {{- include "arbordb.labels" . | nindent 4 }}
+    app.kubernetes.io/name: arbordb-frontend
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: arbordb-frontend
+  template:
+    metadata:
+      labels:
+        {{- include "arbordb.labels" . | nindent 8 }}
+        app.kubernetes.io/name: arbordb-frontend
+    spec:
+      serviceAccountName: arbordb
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "arbordb.podSecurityContext" . | nindent 8 }}
+        runAsUser: 101
+        runAsGroup: 101
+      # spread replicas across nodes so one node going down doesn't take out the UI
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          nodeTaintsPolicy: Honor
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: arbordb-frontend
+          # count only pods of the same version, otherwise old pods skew it during a rollout
+          matchLabelKeys: [pod-template-hash]
+      containers:
+        - name: frontend
+          image: "{{ .Values.image.registry }}/{{ .Values.frontend.image }}:{{ include "arbordb.tag" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.frontend.port }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+          securityContext:
+            {{- include "arbordb.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

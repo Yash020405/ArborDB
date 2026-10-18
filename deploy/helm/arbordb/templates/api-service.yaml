@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: arbordb-api
+  labels:
+    {{- include "arbordb.labels" . | nindent 4 }}
+    app.kubernetes.io/name: arbordb-api
+spec:
+  selector:
+    app.kubernetes.io/name: arbordb-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# headless service required by the StatefulSet
+apiVersion: v1
+kind: Service
+metadata:
+  name: arbordb-api-headless
+  labels:
+    {{- include "arbordb.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: arbordb-api
+  ports:
+    - name: http
+      port: {{ .Values.api.port }}
+      targetPort: http

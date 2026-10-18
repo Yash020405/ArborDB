@@ -1,0 +1,12 @@
+{{- if .Values.monitoring.dashboard }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: arbordb-dashboard
+  labels:
+    {{- include "arbordb.labels" . | nindent 4 }}
+    grafana_dashboard: "1"
+data:
+  arbordb.json: |-
+{{ .Files.Get "files/dashboard.json" | indent 4 }}
+{{- end }}

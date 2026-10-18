@@ -1,0 +1,6 @@
+apiVersion: v2
+name: arbordb
+description: ArborDB - C++ storage engine + Node.js API + React frontend
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
